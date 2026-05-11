@@ -214,7 +214,7 @@ class App(ctk.CTk):
         ).grid(row=0, column=0, columnspan=3, padx=16, pady=(12, 6), sticky="w")
 
         ctk.CTkLabel(
-            mc, text="활동명", font=ctk.CTkFont(size=13), text_color=C_TEXT,
+            mc, text="닉네임", font=ctk.CTkFont(size=13), text_color=C_TEXT,
         ).grid(row=1, column=0, padx=16, pady=(0, 14), sticky="w")
 
         self._ac_names: list[str] = []
@@ -223,7 +223,7 @@ class App(ctk.CTk):
 
         self.member_entry = ctk.CTkEntry(
             mc,
-            placeholder_text="활동명 입력 또는 검색...",
+            placeholder_text="닉네임 입력 또는 검색...",
             fg_color=C_SURFACE, border_color=C_BORDER,
             text_color=C_TEXT, font=ctk.CTkFont(size=13),
             corner_radius=8,
@@ -510,7 +510,7 @@ class App(ctk.CTk):
         me = self._selected_member()
         if me is None:
             if not silent:
-                self._log("[오류] 활동명을 선택하세요.")
+                self._log("[오류] 닉네임을 선택하세요.")
             return
 
         self._active_me = me
@@ -526,7 +526,7 @@ class App(ctk.CTk):
         self.btn_launch.configure(
             text="런처 중지", fg_color=C_RED, hover_color=C_RED_H,
         )
-        self._log(f"[시작] 활동명: {me['name']} | 폴더: {folder}")
+        self._log(f"[시작] 닉네임: {me['name']} | 폴더: {folder}")
 
     def _stop_watcher(self):
         if self._stop_event:
