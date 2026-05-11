@@ -9,8 +9,10 @@ import webbrowser
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
+from PIL import Image
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+import pystray
 
 import database
 from database import DuplicateMatchError
@@ -135,9 +137,12 @@ class App(ctk.CTk):
         self._stop_event: threading.Event | None = None
         self._watcher_thread: threading.Thread | None = None
         self._active_me: dict | None = None  # 감시 시작 시점에 캡처된 나
-        self._log_font_size    = 12
+        self._log_font_size     = 12
         self._base_status_text  = "연결 중..."
         self._base_status_color = C_SUBTEXT
+        self._version_outdated  = False
+        self._notice_text       = ""
+        self._tray_icon: pystray.Icon | None = None
 
         self.title(f"TuFlauncher v{APP_VERSION}")
         self.geometry("820x700")
@@ -150,6 +155,7 @@ class App(ctk.CTk):
 
         self._build_ui()
         self._load_ui_from_config()
+        self._setup_tray()
 
         self.after(100, self._flush_log)
         threading.Thread(target=self._init_app, daemon=True).start()
@@ -294,6 +300,14 @@ class App(ctk.CTk):
         )
         self.btn_launch.pack(side="right")
 
+        ctk.CTkButton(
+            ctrl, text="공지", width=60, height=36,
+            fg_color=C_BTN_SEC, hover_color=C_SURFACE,
+            text_color=C_TEXT, border_color=C_BORDER, border_width=1,
+            corner_radius=10,
+            command=self._show_notice,
+        ).pack(side="right", padx=(0, 8))
+
         # ── 로그 카드 ──────────────────────────────────────────────────────────
         lc = ctk.CTkFrame(content, fg_color=C_CARD, corner_radius=12)
         lc.grid(row=3, column=0, sticky="nsew")
@@ -381,7 +395,8 @@ class App(ctk.CTk):
     def _init_app(self):
         settings = database.fetch_settings()
         self.after(0, lambda: self._apply_settings(settings))
-        self._refresh_members()
+        has_saved_member = bool(self._cfg.get("selected_member_name", "").strip())
+        self._refresh_members(auto_start=has_saved_member)
 
     def _apply_settings(self, s: dict) -> None:
         is_maintenance = bool(s.get("is_maintenance", False))
@@ -390,6 +405,7 @@ class App(ctk.CTk):
         screp_url      = s.get("screp_url")
 
         self._maintenance_mode = is_maintenance
+        self._notice_text = notice
 
         if is_maintenance:
             self._set_status("⚠ 서버 점검 중", C_DANGER)
@@ -400,13 +416,18 @@ class App(ctk.CTk):
                 self._log(f"[공지] {notice}")
 
         if server_version and _is_version_outdated(APP_VERSION, server_version):
-            msg = f"새 버전이 있습니다!\n현재: {APP_VERSION}  →  최신: {server_version}"
-            if screp_url:
-                msg += f"\n다운로드: {screp_url}"
-            messagebox.showwarning("업데이트 필요", msg)
-            self._log(f"[업데이트] 최신 버전: {server_version} (현재: {APP_VERSION})")
+            self._version_outdated = True
+            self._set_status(f"업데이트 필요 (v{server_version})", C_DANGER)
+            self._log(f"[업데이트 필요] 현재: v{APP_VERSION} → 최신: v{server_version}")
+            download_line = f"\n\n다운로드: {screp_url}" if screp_url else ""
+            messagebox.showerror(
+                "업데이트 알림",
+                f"새 버전 (v{server_version}) 이 출시되었습니다.\n"
+                f"깃허브에서 최신 버전을 다운로드 해주세요.{download_line}\n\n"
+                f"업데이트 없이는 런처를 이용할 수 없습니다.",
+            )
         elif server_version:
-            self._log(f"[버전 확인] 최신 버전 ({APP_VERSION})")
+            self._log(f"[버전 확인] 최신 버전 (v{APP_VERSION})")
 
     def _set_status(self, text: str, color: str) -> None:
         self._base_status_text  = text
@@ -416,7 +437,7 @@ class App(ctk.CTk):
 
     # ── 클랜원 ─────────────────────────────────────────────────────────────────
 
-    def _refresh_members(self) -> None:
+    def _refresh_members(self, auto_start: bool = False) -> None:
         members = database.fetch_all_members()
 
         def _update():
@@ -429,6 +450,8 @@ class App(ctk.CTk):
             elif names:
                 self.member_combo.set(names[0])
             self._log(f"클랜원 {len(members)}명 로드 완료.")
+            if auto_start:
+                self._start_watcher(silent=True)
 
         self.after(0, _update)
 
@@ -451,23 +474,35 @@ class App(ctk.CTk):
         else:
             self._start_watcher()
 
-    def _start_watcher(self):
+    def _start_watcher(self, silent: bool = False):
+        if self._version_outdated:
+            if not silent:
+                messagebox.showerror(
+                    "업데이트 필요",
+                    "최신 버전으로 업데이트 후 사용 가능합니다.\n깃허브에서 최신 버전을 다운로드 해주세요.",
+                )
+            return
+
         if self._maintenance_mode:
-            messagebox.showinfo("점검 중", "서버 점검 중입니다.\n점검 종료 후 다시 시도해 주세요.")
+            if not silent:
+                messagebox.showinfo("점검 중", "서버 점검 중입니다.\n점검 종료 후 다시 시도해 주세요.")
             return
 
         folder = self.folder_entry.get().strip()
         if not folder or not Path(folder).is_dir():
-            self._log("[오류] 유효한 리플레이 폴더를 설정하세요.")
+            if not silent:
+                self._log("[오류] 유효한 리플레이 폴더를 설정하세요.")
             return
 
         if not self._members:
-            self._log("[오류] 클랜원 목록이 아직 로드되지 않았습니다. 잠시 후 다시 시도하세요.")
+            if not silent:
+                self._log("[오류] 클랜원 목록이 아직 로드되지 않았습니다. 잠시 후 다시 시도하세요.")
             return
 
         me = self._selected_member()
         if me is None:
-            self._log("[오류] 활동명을 선택하세요.")
+            if not silent:
+                self._log("[오류] 활동명을 선택하세요.")
             return
 
         self._active_me = me
@@ -648,11 +683,53 @@ class App(ctk.CTk):
             self.log_box.configure(state="disabled")
         self.after(100, self._flush_log)
 
+    # ── 공지 ───────────────────────────────────────────────────────────────────
+
+    def _show_notice(self) -> None:
+        if self._notice_text:
+            self._log(f"[공지] {self._notice_text}")
+        else:
+            self._log("[공지] 현재 공지사항이 없습니다.")
+
+    # ── 시스템 트레이 ───────────────────────────────────────────────────────────
+
+    def _setup_tray(self) -> None:
+        try:
+            img = Image.open(_resource("public/favicon.ico")).convert("RGBA").resize((64, 64))
+        except Exception:
+            img = Image.new("RGBA", (64, 64), color=(79, 142, 247, 255))
+
+        menu = pystray.Menu(
+            pystray.MenuItem("열기", lambda icon, item: self.after(0, self._restore_window), default=True),
+            pystray.MenuItem("종료", lambda icon, item: self._quit_app()),
+        )
+        self._tray_icon = pystray.Icon("TuFlauncher", img, "TuFlauncher", menu)
+        threading.Thread(target=self._tray_icon.run, daemon=True).start()
+
+    def _hide_to_tray(self) -> None:
+        self.withdraw()
+        threading.Thread(
+            target=_send_notification,
+            args=("TuFlauncher", "런처가 백그라운드에서 실행 중입니다."),
+            daemon=True,
+        ).start()
+
+    def _restore_window(self) -> None:
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def _quit_app(self, icon=None, item=None) -> None:
+        self._stop_watcher()
+        if self._tray_icon:
+            self._tray_icon.stop()
+            self._tray_icon = None
+        self.after(0, self.destroy)
+
     # ── 종료 ───────────────────────────────────────────────────────────────────
 
     def on_closing(self):
-        self._stop_watcher()
-        self.destroy()
+        self._hide_to_tray()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
