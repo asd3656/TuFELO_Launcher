@@ -6,6 +6,7 @@ import threading
 import time
 from pathlib import Path
 import webbrowser
+import tkinter as tk
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
@@ -216,16 +217,22 @@ class App(ctk.CTk):
             mc, text="활동명", font=ctk.CTkFont(size=13), text_color=C_TEXT,
         ).grid(row=1, column=0, padx=16, pady=(0, 14), sticky="w")
 
-        self.member_combo = ctk.CTkComboBox(
-            mc, values=[], width=260,
+        self._ac_names: list[str] = []
+        self._ac_popup: tk.Toplevel | None = None
+        self._ac_listbox: tk.Listbox | None = None
+
+        self.member_entry = ctk.CTkEntry(
+            mc,
+            placeholder_text="활동명 입력 또는 검색...",
             fg_color=C_SURFACE, border_color=C_BORDER,
-            button_color=C_ACCENT, button_hover_color=C_ACCENT_H,
-            dropdown_fg_color=C_CARD, dropdown_hover_color=C_SURFACE,
             text_color=C_TEXT, font=ctk.CTkFont(size=13),
             corner_radius=8,
         )
-        self.member_combo.set("")
-        self.member_combo.grid(row=1, column=1, padx=(0, 10), pady=(0, 14), sticky="ew")
+        self.member_entry.grid(row=1, column=1, padx=(0, 10), pady=(0, 14), sticky="ew")
+        self.member_entry.bind("<KeyRelease>", self._ac_on_key)
+        self.member_entry.bind("<FocusOut>", lambda e: self.after(150, self._ac_hide))
+        self.member_entry.bind("<Down>",   self._ac_focus_list)
+        self.member_entry.bind("<Escape>", lambda e: self._ac_hide())
 
         ctk.CTkButton(
             mc, text="새로고침", width=80, height=32,
@@ -374,13 +381,13 @@ class App(ctk.CTk):
         self.folder_entry.insert(0, folder)
         saved = self._cfg.get("selected_member_name", "")
         if saved:
-            self.member_combo.set(saved)
+            self._ac_set(saved)
 
     def _save_settings(self):
         me = self._selected_member()
         self._cfg["replay_folder"]        = self.folder_entry.get().strip()
         self._cfg["selected_member_id"]   = me["id"]   if me else ""
-        self._cfg["selected_member_name"] = me["name"] if me else self.member_combo.get().strip()
+        self._cfg["selected_member_name"] = me["name"] if me else self.member_entry.get().strip()
         save_config(self._cfg)
         self._log("설정이 config.json에 저장되었습니다.")
 
@@ -444,12 +451,12 @@ class App(ctk.CTk):
         def _update():
             self._members = members
             names = [m["name"] for m in members]
-            self.member_combo.configure(values=names)
+            self._ac_names = names
             saved = self._cfg.get("selected_member_name", "")
             if saved in names:
-                self.member_combo.set(saved)
+                self._ac_set(saved)
             elif names:
-                self.member_combo.set(names[0])
+                self._ac_set(names[0])
             self._log(f"클랜원 {len(members)}명 로드 완료.")
             if auto_start:
                 self._start_watcher(silent=True)
@@ -457,7 +464,7 @@ class App(ctk.CTk):
         self.after(0, _update)
 
     def _selected_member(self) -> dict | None:
-        name = self.member_combo.get().strip()
+        name = self.member_entry.get().strip()
         return next((m for m in self._members if m["name"] == name), None)
 
     def _find_clan_member(self, replay_name: str) -> dict | None:
@@ -683,6 +690,72 @@ class App(ctk.CTk):
             self.log_box.see("end")
             self.log_box.configure(state="disabled")
         self.after(100, self._flush_log)
+
+    # ── 활동명 자동완성 ────────────────────────────────────────────────────────
+
+    def _ac_set(self, name: str) -> None:
+        self.member_entry.delete(0, "end")
+        self.member_entry.insert(0, name)
+
+    def _ac_on_key(self, event) -> None:
+        if event.keysym in ("Down", "Up", "Return", "Escape", "Tab"):
+            return
+        typed = self.member_entry.get().strip()
+        if typed:
+            filtered = [n for n in self._ac_names if typed.lower() in n.lower()]
+        else:
+            filtered = self._ac_names
+        self._ac_show(filtered)
+
+    def _ac_show(self, names: list[str]) -> None:
+        if not names:
+            self._ac_hide()
+            return
+        if self._ac_popup is None or not self._ac_popup.winfo_exists():
+            self._ac_popup = tk.Toplevel(self)
+            self._ac_popup.overrideredirect(True)
+            self._ac_popup.configure(bg=C_BORDER)
+            self._ac_listbox = tk.Listbox(
+                self._ac_popup,
+                bg=C_CARD, fg=C_TEXT,
+                selectbackground=C_ACCENT, selectforeground="#ffffff",
+                font=("맑은 고딕", 12),
+                borderwidth=0, highlightthickness=0,
+                relief="flat", activestyle="none",
+            )
+            self._ac_listbox.pack(fill="both", expand=True, padx=1, pady=1)
+            self._ac_listbox.bind("<ButtonRelease-1>", self._ac_select)
+            self._ac_listbox.bind("<Return>",   self._ac_select)
+            self._ac_listbox.bind("<FocusOut>", lambda e: self.after(100, self._ac_hide))
+
+        self._ac_listbox.delete(0, "end")
+        for name in names:
+            self._ac_listbox.insert("end", f"  {name}")
+
+        x = self.member_entry.winfo_rootx()
+        y = self.member_entry.winfo_rooty() + self.member_entry.winfo_height() + 2
+        w = self.member_entry.winfo_width()
+        h = min(len(names), 6) * 28 + 4
+        self._ac_popup.geometry(f"{w}x{h}+{x}+{y}")
+        self._ac_popup.lift()
+        self._ac_popup.deiconify()
+
+    def _ac_hide(self) -> None:
+        if self._ac_popup and self._ac_popup.winfo_exists():
+            self._ac_popup.withdraw()
+
+    def _ac_select(self, event=None) -> None:
+        if self._ac_listbox:
+            sel = self._ac_listbox.curselection()
+            if sel:
+                self._ac_set(self._ac_listbox.get(sel[0]).strip())
+                self._ac_hide()
+
+    def _ac_focus_list(self, event=None) -> None:
+        if self._ac_popup and self._ac_popup.winfo_exists() and self._ac_listbox.size() > 0:
+            self._ac_listbox.focus_set()
+            self._ac_listbox.selection_set(0)
+            self._ac_listbox.activate(0)
 
     # ── 공지 ───────────────────────────────────────────────────────────────────
 
