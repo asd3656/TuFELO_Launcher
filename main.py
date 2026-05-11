@@ -411,7 +411,8 @@ class App(ctk.CTk):
             self._set_status("⚠ 서버 점검 중", C_DANGER)
             self._log("[점검] 서버 점검 중. 런처를 시작할 수 없습니다.")
         else:
-            self._set_status(notice if notice else "정상 운영 중", C_SUCCESS)
+            first_line = notice.splitlines()[0] if notice else "정상 운영 중"
+            self._set_status(first_line, C_SUCCESS)
             if notice:
                 self._log(f"[공지] {notice}")
 
