@@ -455,8 +455,6 @@ class App(ctk.CTk):
             saved = self._cfg.get("selected_member_name", "")
             if saved in names:
                 self._ac_set(saved)
-            elif names:
-                self._ac_set(names[0])
             self._log(f"클랜원 {len(members)}명 로드 완료.")
             if auto_start:
                 self._start_watcher(silent=True)
@@ -464,8 +462,8 @@ class App(ctk.CTk):
         self.after(0, _update)
 
     def _selected_member(self) -> dict | None:
-        name = self.member_entry.get().strip()
-        return next((m for m in self._members if m["name"] == name), None)
+        name = self.member_entry.get().strip().lower()
+        return next((m for m in self._members if m["name"].lower() == name), None)
 
     def _find_clan_member(self, replay_name: str) -> dict | None:
         replay_lower = replay_name.lower()
