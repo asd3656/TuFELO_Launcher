@@ -1,6 +1,7 @@
 import json
 import os
 import queue
+import sys
 import threading
 import time
 from pathlib import Path
@@ -20,7 +21,22 @@ import parser as rep_parser
 # ──────────────────────────────────────────────────────────────────────────────
 
 APP_VERSION = "1.0.0"
-CONFIG_PATH = Path(__file__).parent / "config.json"
+
+
+def _app_dir() -> Path:
+    """PyInstaller --onefile 번들과 개발 환경 모두에서 실행 파일 디렉터리를 반환합니다."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent
+
+
+def _resource(relative: str) -> str:
+    """번들 내 리소스 경로(개발 환경에서는 프로젝트 루트 기준)를 반환합니다."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return str(base / relative)
+
+
+CONFIG_PATH = _app_dir() / "config.json"
 
 C_BG       = "#0b0e14"   # 앱 배경
 C_CARD     = "#131929"   # 카드 배경
@@ -119,12 +135,18 @@ class App(ctk.CTk):
         self._stop_event: threading.Event | None = None
         self._watcher_thread: threading.Thread | None = None
         self._active_me: dict | None = None  # 감시 시작 시점에 캡처된 나
-        self._log_font_size = 12
+        self._log_font_size    = 12
+        self._base_status_text  = "연결 중..."
+        self._base_status_color = C_SUBTEXT
 
         self.title(f"TuFlauncher v{APP_VERSION}")
         self.geometry("820x700")
         self.minsize(720, 580)
         self.configure(fg_color=C_BG)
+        try:
+            self.iconbitmap(_resource("public/favicon.ico"))
+        except Exception:
+            pass
 
         self._build_ui()
         self._load_ui_from_config()
@@ -250,15 +272,6 @@ class App(ctk.CTk):
             command=self._save_settings,
         ).pack(side="left", padx=(0, 8))
 
-        self.btn_test = ctk.CTkButton(
-            ctrl, text="시트 전송 테스트", width=130, height=36,
-            fg_color=C_BTN_SEC, hover_color=C_SURFACE,
-            text_color=C_TEXT, border_color=C_BORDER, border_width=1,
-            corner_radius=10,
-            command=self._test_sheet_send,
-        )
-        self.btn_test.pack(side="left", padx=(0, 8))
-
         _links = [
             ("ELO보드",  "https://tufelo.vercel.app/"),
             ("승부예측", "https://tufpl.vercel.app/"),
@@ -288,7 +301,7 @@ class App(ctk.CTk):
         lc.grid_rowconfigure(1, weight=1)
 
         log_hdr = ctk.CTkFrame(lc, fg_color="transparent")
-        log_hdr.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+        log_hdr.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 4))
         log_hdr.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -313,7 +326,21 @@ class App(ctk.CTk):
             text_color=C_SUBTEXT, border_color=C_BORDER, border_width=1,
             corner_radius=6, font=ctk.CTkFont(size=11),
             command=lambda: self._change_log_font(+1),
+        ).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            font_ctrl, text="지우기", width=52, height=24,
+            fg_color=C_BTN_SEC, hover_color=C_SURFACE,
+            text_color=C_SUBTEXT, border_color=C_BORDER, border_width=1,
+            corner_radius=6, font=ctk.CTkFont(size=11),
+            command=self._clear_log,
         ).pack(side="left")
+
+        self._last_match_label = ctk.CTkLabel(
+            log_hdr, text="",
+            font=ctk.CTkFont(size=11), text_color=C_SUBTEXT,
+        )
+        self._last_match_label.grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 4))
 
         self.log_box = ctk.CTkTextbox(
             lc,
@@ -382,6 +409,8 @@ class App(ctk.CTk):
             self._log(f"[버전 확인] 최신 버전 ({APP_VERSION})")
 
     def _set_status(self, text: str, color: str) -> None:
+        self._base_status_text  = text
+        self._base_status_color = color
         self._status_label.configure(text=text, text_color=color)
         self._status_dot.configure(text_color=color)
 
@@ -399,7 +428,7 @@ class App(ctk.CTk):
                 self.member_combo.set(saved)
             elif names:
                 self.member_combo.set(names[0])
-            self._log(f"클랜원 {len(members)}명 로드 완료: {', '.join(names)}")
+            self._log(f"클랜원 {len(members)}명 로드 완료.")
 
         self.after(0, _update)
 
@@ -478,29 +507,6 @@ class App(ctk.CTk):
             observer.stop()
             observer.join()
             self._log("[감시 중지]")
-
-    # ── 시트 전송 테스트 ───────────────────────────────────────────────────────
-
-    def _test_sheet_send(self):
-        self.btn_test.configure(state="disabled")
-        self._log("[테스트] Apps Script로 TEST 행 전송 중...")
-
-        def _run():
-            try:
-                database.send_match(
-                    tier_w="테스트티어", name_w="테스트승자",
-                    tier_l="테스트티어", name_l="테스트패자",
-                    map="테스트맵", match_type="TEST",
-                    played_at="2000-01-01 00:00:00",
-                    replay_hash="test_hash_00000000",
-                )
-                self._log("[테스트] 시트 전송 성공! 구글 시트에서 TEST 행을 확인하고 삭제해 주세요.")
-            except Exception as e:
-                self._log(f"[테스트] 전송 실패: {e}")
-            finally:
-                self.after(0, lambda: self.btn_test.configure(state="normal"))
-
-        threading.Thread(target=_run, daemon=True).start()
 
     # ── 리플레이 처리 ──────────────────────────────────────────────────────────
 
@@ -581,6 +587,9 @@ class App(ctk.CTk):
                 f"[수집 완료] 유형: {match_type} | 맵: {parsed['map_name']} | "
                 f"결과: {winner_member['name']} vs {loser_member['name']} | hash: {short_hash}"
             )
+            self.after(0, lambda: self._flash_success(
+                winner_member["name"], loser_member["name"], match_type
+            ))
             _send_notification(
                 "TuFlauncher — 전적 기록 완료",
                 f"{winner_member['name']} vs {loser_member['name']}  |  유형: {match_type}",
@@ -593,6 +602,35 @@ class App(ctk.CTk):
             self._log(f"[전송 오류] {e} | hash: {short_hash}")
 
     # ── 로그 ───────────────────────────────────────────────────────────────────
+
+    def _flash_success(self, winner: str, loser: str, match_type: str) -> None:
+        """전적 전송 완료 시 헤더 상태 텍스트를 3초간 녹색으로 깜빡입니다."""
+        self._last_match_label.configure(
+            text=f"최근: {winner} vs {loser}  ({match_type})",
+            text_color=C_SUCCESS,
+        )
+        ticks = [6]  # 6 × 500ms = 3초
+
+        def _tick():
+            if ticks[0] <= 0:
+                self._status_label.configure(
+                    text=self._base_status_text, text_color=self._base_status_color,
+                )
+                self._status_dot.configure(text_color=self._base_status_color)
+                self._last_match_label.configure(text_color=C_SUBTEXT)
+                return
+            color = C_SUCCESS if ticks[0] % 2 == 0 else C_CARD
+            self._status_label.configure(text="전적 전송 완료!", text_color=color)
+            self._status_dot.configure(text_color=color)
+            ticks[0] -= 1
+            self.after(500, _tick)
+
+        _tick()
+
+    def _clear_log(self) -> None:
+        self.log_box.configure(state="normal")
+        self.log_box.delete("1.0", "end")
+        self.log_box.configure(state="disabled")
 
     def _change_log_font(self, delta: int) -> None:
         self._log_font_size = max(8, min(24, self._log_font_size + delta))

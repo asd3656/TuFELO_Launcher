@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(if \\(-not $?\\) { \"Directory is empty or does not exist\" })"
+      "PowerShell(if \\(-not $?\\) { \"Directory is empty or does not exist\" })",
+      "Bash(pip install *)",
+      "Bash(pyinstaller --onefile --windowed --name TuFlauncher --icon \"public\\\\favicon.ico\" --add-data \"public\\\\favicon.ico;public\" --add-data \"screp.exe;.\" --collect-all customtkinter main.py)"
     ]
   }
 }
