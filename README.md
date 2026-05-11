@@ -11,7 +11,7 @@ TuF 클랜 ELO 시스템 연동 런처입니다.
 
 ### 1. 다운로드
 
-[다운로드](https://github.com/asd3656/TuFELO_Launcher/releases/tag/v1.0.0)에서 **`TuFlauncher.exe` 파일 하나만** 받으면 됩니다.
+[다운로드](https://github.com/asd3656/TuFELO_Launcher/releases/latest)에서 **`TuFlauncher.exe` 파일 하나만** 받으면 됩니다.
 
 ### 2. 폴더 구조 확인
 
