@@ -2,8 +2,8 @@
 
 TuF 클랜 ELO 시스템 연동 런처입니다.  
 스타크래프트 리마스터 리플레이를 자동 감지해 전적을 Google Sheets에 기록합니다.
-해당 런처 파일의 기능은 리플레이 폴더 탐색기능 하나만 존재합니다. 어떠한 개인정보 수집도 다른 기능도 존재하지 않습니다.
-걱정되신다면 AI에게 해당 깃허브 코드를 주고 악성코드가 있는지 확인해보시고 다운로드 바랍니다.
+- 해당 런처 파일의 기능은 리플레이 폴더 탐색기능 하나만 존재합니다. 
+- 어떠한 개인정보 수집도 다른 기능도 존재하지 않습니다.
 
 ---
 
@@ -11,7 +11,7 @@ TuF 클랜 ELO 시스템 연동 런처입니다.
 
 ### 1. 다운로드
 
-[최신 릴리즈 페이지](https://github.com/asd3656/TuFELO_Launcher/releases/tag/untagged-544b3a56502ea450ade0)에서 **`TuFlauncher.exe` 파일 하나만** 받으면 됩니다.
+[다운로드](https://github.com/asd3656/TuFELO_Launcher/releases/tag/untagged-544b3a56502ea450ade0)에서 **`TuFlauncher.exe` 파일 하나만** 받으면 됩니다.
 
 ### 2. 폴더 구조 확인
 
@@ -20,8 +20,8 @@ TuF 클랜 ELO 시스템 연동 런처입니다.
 └── TuFlauncher.exe
 ```
 
-`config.json`은 첫 실행 시 같은 폴더에 자동으로 생성됩니다.
-해당 파일은 프로그램의 설정값을 저장하는 파일로 TuFlauncher.exe 파일과 같은폴더에 넣어놓으시면 됩니다.
+- `config.json`은 첫 실행 시 같은 폴더에 자동으로 생성됩니다.
+- 해당 파일은 프로그램의 설정값을 저장하는 파일로 TuFlauncher.exe 파일과 같은폴더에 넣어놓으시면 됩니다.
 
 ---
 
