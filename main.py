@@ -23,7 +23,7 @@ import parser as rep_parser
 # 상수 / 컬러 팔레트 (ELO 보드 톤)
 # ──────────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 
 def _app_dir() -> Path:
