@@ -27,6 +27,7 @@ KST = timezone(timedelta(hours=9))  # Korea Standard Time (UTC+9)
 
 # SC:BW 색상/제어 코드: \x01~\x1e 범위 바이트를 색상 변경에 사용
 _SC_COLOR_RE = re.compile(r"[\x00-\x1e]")
+_MAP_VERSION_RE = re.compile(r"\s+\d+\.\d+(\.\d+)*\s*$")
 
 # 탐색 우선순위 — 앞에 있는 경로가 먼저 사용됨
 _SCREP_CANDIDATES: list[Path] = [
@@ -174,7 +175,7 @@ def _extract_fields(data: dict) -> dict:
     computed = data.get("Computed", {})
 
     title:    str = _strip_sc_codes(header.get("Title",   ""))
-    map_name: str = _strip_sc_codes(header.get("Map",     ""))
+    map_name: str = _MAP_VERSION_RE.sub("", _strip_sc_codes(header.get("Map", ""))).strip()
 
     # BW는 24fps 고정. Frames=0인 손상 리플레이 방어
     frames:   int = max(0, header.get("Frames", 0))

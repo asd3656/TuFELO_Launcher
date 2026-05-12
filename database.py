@@ -95,10 +95,11 @@ def fetch_all_members() -> list[dict]:
 
 def send_match(
     *,
-    tier_w: str,
-    name_w: str,
-    tier_l: str,
-    name_l: str,
+    tier_p1: str = "",
+    name_p1: str,
+    tier_p2: str = "",
+    name_p2: str,
+    player1_won: bool,
     map: str,
     match_type: str,
     played_at: str = "",
@@ -108,14 +109,16 @@ def send_match(
     경기 결과를 Google Apps Script Web App에 POST합니다.
 
     시트 열 순서:
-      A: tier_w, B: name_w, C: "승", D: "패",
-      E: name_l, F: tier_l, G: map, H: match_type,
+      A: tier_p1, B: name_p1, C: 승/패, D: 패/승,
+      E: name_p2, F: tier_p2, G: map, H: match_type,
       K: played_at, L: replay_hash (중복 방지 지문)
+    name_p1 은 항상 런처 사용자, player1_won 으로 승패 결정.
     """
     if not APPS_SCRIPT_URL:
         raise RuntimeError("APPS_SCRIPT_URL이 설정되지 않았습니다.")
 
-    row = [tier_w, name_w, "승", "패", name_l, tier_l, map, match_type, "", "", played_at, replay_hash]
+    result1, result2 = ("승", "패") if player1_won else ("패", "승")
+    row = [tier_p1, name_p1, result1, result2, name_p2, tier_p2, map, match_type, "", "", played_at, replay_hash]
     payload = {"rows": [row]}
 
     resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=15, allow_redirects=False)
