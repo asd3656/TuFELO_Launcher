@@ -6,7 +6,7 @@ class DuplicateMatchError(Exception):
 
 
 # Google Apps Script Web App 배포 URL — 경기 결과 전송 대상
-APPS_SCRIPT_URL: str = "https://script.google.com/macros/s/AKfycbwfIsE4WOWatCQHUqfofa7NEjJoU5xk05z00Sjonm2XiGP0FiUcs3bdqJ_gYaMurXM-/exec"
+APPS_SCRIPT_URL: str = "https://script.google.com/macros/s/AKfycbxBp22Aq9g_5S_r80gh4fMopwAVekjnxOWH_0ERlnTlcGiNWZ-SBok8IsjzRkJQjFFo/exec"
 
 # Supabase — 클랜원 목록 및 설정 조회용 (SDK 없이 REST API 직접 호출)
 _SUPABASE_URL: str = "https://ypwcyorlzwyegjtwcqzw.supabase.co"
@@ -127,7 +127,10 @@ def send_match(
         resp = requests.get(location, timeout=15)
 
     resp.raise_for_status()
-    result = resp.json()
+    try:
+        result = resp.json()
+    except Exception:
+        return  # HTTP 200 OK + non-JSON 응답 → 시트 기록 성공으로 간주
     if result.get("status") == "duplicate":
         raise DuplicateMatchError("이미 등록된 경기입니다. (다른 클랜원이 먼저 업로드)")
     if result.get("status") == "error":

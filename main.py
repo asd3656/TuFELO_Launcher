@@ -23,7 +23,7 @@ import parser as rep_parser
 # 상수 / 컬러 팔레트 (ELO 보드 톤)
 # ──────────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 
 def _app_dir() -> Path:
@@ -148,8 +148,8 @@ class App(ctk.CTk):
         self._tray_icon: pystray.Icon | None = None
 
         self.title(f"TuFlauncher v{APP_VERSION}")
-        self.geometry("820x700")
-        self.minsize(720, 580)
+        self.geometry("820x780")
+        self.minsize(720, 640)
         self.configure(fg_color=C_BG)
         try:
             self.iconbitmap(_resource("public/favicon.ico"))
@@ -331,25 +331,35 @@ class App(ctk.CTk):
         pc.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         pc.grid_columnconfigure(0, weight=1)
 
+        pc_hdr = ctk.CTkFrame(pc, fg_color="transparent")
+        pc_hdr.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
+        pc_hdr.grid_columnconfigure(0, weight=1)
+
         ctk.CTkLabel(
-            pc, text="미확인 상대",
+            pc_hdr, text="미확인 상대",
             font=ctk.CTkFont(size=12, weight="bold"), text_color=C_SUBTEXT,
-        ).grid(row=0, column=0, padx=16, pady=(10, 4), sticky="w")
+        ).grid(row=0, column=0, sticky="w")
 
-        pending_lb_wrap = tk.Frame(pc, bg=C_LOG_BG, highlightthickness=0)
-        pending_lb_wrap.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 4))
+        self._select_all_var = tk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            pc_hdr, text="전체선택",
+            variable=self._select_all_var,
+            command=self._on_select_all,
+            font=ctk.CTkFont(size=11), text_color=C_SUBTEXT,
+            fg_color=C_ACCENT, hover_color=C_ACCENT_H,
+            checkmark_color="#ffffff",
+        ).grid(row=0, column=1, sticky="e", padx=(0, 4))
 
-        self._pending_listbox = tk.Listbox(
-            pending_lb_wrap,
-            bg=C_LOG_BG, fg=C_TEXT,
-            selectbackground=C_ACCENT, selectforeground="#ffffff",
-            font=("Consolas", 11),
-            borderwidth=0, highlightthickness=0,
-            relief="flat", activestyle="none",
-            height=3,
+        self._pending_check_vars: list[tk.BooleanVar] = []
+        self._pending_check_widgets: list[ctk.CTkCheckBox] = []
+        _cb_outer = tk.Frame(pc, bg=C_LOG_BG, height=96)
+        _cb_outer.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 4))
+        _cb_outer.pack_propagate(False)
+        self._pending_cb_frame = ctk.CTkScrollableFrame(
+            _cb_outer, fg_color=C_LOG_BG, corner_radius=6,
         )
-        self._pending_listbox.pack(fill="both", expand=True, padx=4, pady=4)
-        self._pending_listbox.bind("<<ListboxSelect>>", self._on_pending_select)
+        self._pending_cb_frame.pack(fill="both", expand=True)
+        self._pending_cb_frame.grid_columnconfigure(0, weight=1)
 
         # ── 인라인 상대선수 입력 (항목 선택 시 표시) ───────────────────────────
         self._pending_input_frame = ctk.CTkFrame(pc, fg_color=C_SURFACE, corner_radius=8)
@@ -517,15 +527,43 @@ class App(ctk.CTk):
             self._version_outdated = True
             self._set_status(f"업데이트 필요 (v{server_version})", C_DANGER)
             self._log(f"[업데이트 필요] 현재: v{APP_VERSION} → 최신: v{server_version}")
-            download_line = f"\n\n다운로드: {screp_url}" if screp_url else ""
-            messagebox.showerror(
-                "업데이트 알림",
-                f"새 버전 (v{server_version}) 이 출시되었습니다.\n"
-                f"깃허브에서 최신 버전을 다운로드 해주세요.{download_line}\n\n"
-                f"업데이트 없이는 런처를 이용할 수 없습니다.",
-            )
+            if screp_url:
+                self._log(f"[업데이트] 다운로드: {screp_url}")
+            self._show_update_dialog(server_version, screp_url or "")
         elif server_version:
             self._log(f"[버전 확인] 최신 버전 (v{APP_VERSION})")
+
+    def _show_update_dialog(self, server_version: str, download_url: str) -> None:
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("업데이트 알림")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        ctk.CTkLabel(
+            dlg,
+            text=(
+                f"새 버전 (v{server_version}) 이 출시되었습니다.\n"
+                "깃허브에서 최신 버전을 다운로드 해주세요.\n\n"
+                "업데이트 없이는 런처를 이용할 수 없습니다."
+            ),
+            wraplength=360,
+            justify="center",
+        ).pack(padx=24, pady=(20, 10))
+
+        if download_url:
+            ctk.CTkLabel(dlg, text="다운로드 링크 (선택 후 Ctrl+C):").pack(padx=24, anchor="w")
+            url_entry = ctk.CTkEntry(dlg, width=360)
+            url_entry.insert(0, download_url)
+            url_entry.configure(state="readonly")
+            url_entry.pack(padx=24, pady=(4, 14))
+
+        ctk.CTkButton(dlg, text="확인", command=dlg.destroy, width=100).pack(pady=(0, 20))
+
+        dlg.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width()  - dlg.winfo_width())  // 2
+        y = self.winfo_y() + (self.winfo_height() - dlg.winfo_height()) // 2
+        dlg.geometry(f"+{x}+{y}")
+        self.wait_window(dlg)
 
     def _set_status(self, text: str, color: str) -> None:
         self._base_status_text  = text
@@ -568,14 +606,30 @@ class App(ctk.CTk):
             self._log(f"[닉네임] 입력 실패 — '{name}' 닉네임이 클랜원 목록에 없습니다.")
 
     @staticmethod
-    def _fmt_tier(raw: str | None) -> str:
-        t = (raw or "").strip()
+    def _fmt_tier(raw) -> str:
+        t = str(raw).strip() if raw is not None else ""
         return f"{t}티어" if t else ""
 
+    @staticmethod
+    def _name_matches(db_name: str, ingame_name: str) -> bool:
+        """DB 닉네임이 인게임 닉네임과 일치하는지 확인합니다.
+        배틀넷 형식(ClanTag`Name, [TAG]Name)의 클랜태그를 제거한 뒤 비교합니다."""
+        dl = db_name.lower()
+        il = ingame_name.lower()
+        if dl == il:
+            return True
+        # "ClanTag`PlayerName" → 백틱 뒤 이름만 비교
+        if '`' in il and il.split('`', 1)[1] == dl:
+            return True
+        # "[TAG]PlayerName" → ']' 뒤 이름만 비교
+        if il.startswith('[') and ']' in il:
+            if il[il.index(']') + 1:] == dl:
+                return True
+        return False
+
     def _find_clan_member(self, replay_name: str) -> dict | None:
-        replay_lower = replay_name.lower()
         for member in self._members:
-            if member["name"].lower() in replay_lower:
+            if self._name_matches(member["name"], replay_name):
                 return member
         return None
 
@@ -675,6 +729,12 @@ class App(ctk.CTk):
             self._log(f"[파싱 오류] {e}")
             return
 
+        try:
+            self._process_replay(parsed)
+        except Exception as e:
+            self._log(f"[처리 오류] {e}")
+
+    def _process_replay(self, parsed: dict):
         # 2. $ 태그 필터
         match_type = rep_parser.extract_match_type(parsed)
         if match_type is None:
@@ -698,7 +758,7 @@ class App(ctk.CTk):
         me = self._active_me
         me_name = me["name"] if me else ""
         user_player = next(
-            (p for p in players if me_name.lower() in p["name"].lower()),
+            (p for p in players if self._name_matches(me_name, p["name"])),
             None,
         )
         if user_player is None:
@@ -708,6 +768,11 @@ class App(ctk.CTk):
         opp_player   = next(p for p in players if p is not user_player)
         opp_raw_name = opp_player["name"]
         player1_won  = winner_name.lower() == user_player["name"].lower()
+
+        self._log(
+            f"[분석] match_type={match_type} | 내닉={me_name}({user_player['name']}) "
+            f"| 상대={opp_raw_name} | 승자={winner_name}"
+        )
 
         # 6. 상대방 클랜원 DB 확인 (인게임명 → DB명 부분일치)
         opp_member   = self._find_clan_member(opp_raw_name)
@@ -762,33 +827,60 @@ class App(ctk.CTk):
     # ── 미확인 상대 패널 ────────────────────────────────────────────────────────
 
     def _add_pending_match(self, match_data: dict) -> None:
-        self._pending_matches.append(match_data)
-        result_str = "승리" if match_data["player1_won"] else "패배"
-        display = (
-            f"[{match_data['match_type']}] {match_data['map']} | "
-            f"{match_data['me_name']} {result_str} vs ??? ({match_data['opp_raw_name']}) | "
-            f"{match_data['played_at']}"
-        )
-        self._pending_listbox.insert("end", f"  {display}")
-        self._log(
-            f"[미확인 상대] '{match_data['opp_raw_name']}' 이(가) 클랜원 목록에 없습니다 "
-            f"— 미확인 상대 패널에서 선수 입력 후 전송하세요."
-        )
+        try:
+            self._pending_matches.append(match_data)
+            result_str = "승리" if match_data["player1_won"] else "패배"
+            display = (
+                f"[{match_data['match_type']}] {match_data['map']}  "
+                f"{match_data['me_name']} {result_str} vs {match_data['opp_raw_name']}"
+            )
+            var = tk.BooleanVar(value=False)
+            self._pending_check_vars.append(var)
+            cb = ctk.CTkCheckBox(
+                self._pending_cb_frame,
+                text=display,
+                variable=var,
+                command=self._on_check_changed,
+                font=ctk.CTkFont(family="Consolas", size=11),
+                text_color=C_TEXT,
+                fg_color=C_ACCENT, hover_color=C_ACCENT_H,
+                checkmark_color="#ffffff",
+            )
+            cb.pack(fill="x", padx=4, pady=2, anchor="w")
+            self._pending_check_widgets.append(cb)
+            self._log(
+                f"[미확인 상대] '{match_data['opp_raw_name']}' 이(가) 클랜원 목록에 없습니다 "
+                f"— 미확인 상대 패널에서 선수 입력 후 전송하세요."
+            )
+        except Exception as e:
+            self._log(f"[미확인 상대 오류] {e}")
 
-    def _on_pending_select(self, event=None) -> None:
-        sel = self._pending_listbox.curselection()
-        if not sel:
+    def _on_check_changed(self) -> None:
+        checked = [i for i, v in enumerate(self._pending_check_vars) if v.get()]
+        self._select_all_var.set(
+            bool(checked) and len(checked) == len(self._pending_check_vars)
+        )
+        if not checked:
             self._pending_input_frame.grid_remove()
             return
-        idx = sel[0]
-        if idx < len(self._pending_matches):
-            raw = self._pending_matches[idx]["opp_raw_name"]
-            self._pending_opp_label.configure(text=f"인게임: {raw}")
-        self._opp_inline_entry.delete(0, "end")
-        self._opp_ac_listbox.configure(height=0)
-        self._opp_ac_listbox.delete(0, "end")
+        raws = list(dict.fromkeys(
+            self._pending_matches[i]["opp_raw_name"] for i in checked
+        ))
+        if len(raws) == 1:
+            label = f"인게임: {raws[0]}"
+            if len(checked) > 1:
+                label += f"  ({len(checked)}경기 선택)"
+        else:
+            label = f"{len(checked)}경기 선택 (상대 다수)"
+        self._pending_opp_label.configure(text=label)
         self._pending_input_frame.grid()
         self._opp_inline_entry.focus_set()
+
+    def _on_select_all(self) -> None:
+        state = self._select_all_var.get()
+        for var in self._pending_check_vars:
+            var.set(state)
+        self._on_check_changed()
 
     def _opp_ac_on_key(self, event) -> None:
         if event.keysym in ("Return", "Escape"):
@@ -810,10 +902,9 @@ class App(ctk.CTk):
             self._opp_ac_listbox.delete(0, "end")
 
     def _confirm_pending_inline(self) -> None:
-        sel = self._pending_listbox.curselection()
-        if not sel:
+        checked = [i for i, v in enumerate(self._pending_check_vars) if v.get()]
+        if not checked:
             return
-        idx = sel[0]
         name = self._opp_inline_entry.get().strip()
         if not name:
             self._log("[미확인 상대] 닉네임을 입력해 주세요.")
@@ -825,10 +916,13 @@ class App(ctk.CTk):
             self._log(f"[미확인 상대] '{name}' 닉네임이 클랜원 목록에 없습니다.")
             return
         self._cancel_pending_inline()
-        self._send_pending_match(idx, matched)
+        for idx in sorted(checked, reverse=True):
+            self._send_pending_match(idx, matched)
 
     def _cancel_pending_inline(self) -> None:
-        self._pending_listbox.selection_clear(0, "end")
+        for var in self._pending_check_vars:
+            var.set(False)
+        self._select_all_var.set(False)
         self._pending_input_frame.grid_remove()
         self._opp_inline_entry.delete(0, "end")
         self._opp_ac_listbox.configure(height=0)
@@ -869,7 +963,9 @@ class App(ctk.CTk):
             self._log(f"[전송 오류] {e} | hash: {short_hash}")
         finally:
             self._pending_matches.pop(idx)
-            self._pending_listbox.delete(idx)
+            self._pending_check_vars.pop(idx)
+            widget = self._pending_check_widgets.pop(idx)
+            widget.destroy()
 
     # ── 로그 ───────────────────────────────────────────────────────────────────
 
