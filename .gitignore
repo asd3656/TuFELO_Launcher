@@ -4,3 +4,4 @@ __pycache__/
 *.rep
 build/
 dist/
+*.spec
