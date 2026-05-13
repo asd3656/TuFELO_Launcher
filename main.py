@@ -1,6 +1,7 @@
 import json
 import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -679,6 +680,8 @@ class App(ctk.CTk):
             self._log(f"[버전 확인] 최신 버전 (v{APP_VERSION})")
 
     def _show_update_dialog(self, server_version: str, download_url: str) -> None:
+        import requests as _requests
+
         dlg = ctk.CTkToplevel(self)
         dlg.title("업데이트 알림")
         dlg.resizable(False, False)
@@ -688,21 +691,123 @@ class App(ctk.CTk):
             dlg,
             text=(
                 f"새 버전 (v{server_version}) 이 출시되었습니다.\n"
-                "깃허브에서 최신 버전을 다운로드 해주세요.\n\n"
-                "업데이트 없이는 런처를 이용할 수 없습니다."
+                "업데이트 없이는 런처를 이용할 수 없습니다.\n\n"
+                "지금 바로 다운로드 하시겠습니까?"
             ),
             wraplength=360,
             justify="center",
         ).pack(padx=24, pady=(20, 10))
 
-        if download_url:
-            ctk.CTkLabel(dlg, text="다운로드 링크 (선택 후 Ctrl+C):").pack(padx=24, anchor="w")
-            url_entry = ctk.CTkEntry(dlg, width=360)
-            url_entry.insert(0, download_url)
-            url_entry.configure(state="readonly")
-            url_entry.pack(padx=24, pady=(4, 14))
+        progress_label = ctk.CTkLabel(dlg, text="", font=ctk.CTkFont(size=11), text_color=C_SUBTEXT)
+        progress_label.pack(padx=24)
 
-        ctk.CTkButton(dlg, text="확인", command=dlg.destroy, width=100).pack(pady=(0, 20))
+        progress_bar = ctk.CTkProgressBar(dlg, width=360)
+        progress_bar.set(0)
+
+        btn_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        btn_frame.pack(pady=(10, 20))
+
+        def _start_download():
+            btn_download.configure(state="disabled")
+            btn_cancel.configure(state="disabled")
+            progress_bar.pack(padx=24, pady=(4, 8), before=btn_frame)
+            progress_label.configure(text="다운로드 준비 중...")
+            dlg.update_idletasks()
+
+            def _do():
+                try:
+                    if getattr(sys, "frozen", False):
+                        save_dir = Path(sys.executable).parent
+                        tmp_path = save_dir / f"_TuFlauncher_update.exe"
+                    else:
+                        tmp_path = Path(__file__).parent / f"TuFlauncher_v{server_version}.exe"
+
+                    resp = _requests.get(download_url, stream=True, timeout=30)
+                    resp.raise_for_status()
+                    total = int(resp.headers.get("content-length", 0))
+                    downloaded = 0
+                    with open(tmp_path, "wb") as f:
+                        for chunk in resp.iter_content(chunk_size=65536):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total:
+                                    pct = downloaded / total
+                                    dlg.after(0, lambda p=pct: progress_bar.set(p))
+                                    dlg.after(0, lambda p=pct: progress_label.configure(
+                                        text=f"다운로드 중... {int(p * 100)}%"
+                                    ))
+                    dlg.after(0, lambda: _on_done(tmp_path))
+                except Exception as e:
+                    dlg.after(0, lambda err=str(e): _on_error(err))
+
+            threading.Thread(target=_do, daemon=True).start()
+
+        def _on_done(tmp_path: Path):
+            progress_bar.set(1)
+            progress_label.configure(text="다운로드 완료!", text_color=C_SUCCESS)
+
+            for w in btn_frame.winfo_children():
+                w.destroy()
+
+            if getattr(sys, "frozen", False):
+                current_exe = Path(sys.executable)
+                bat_path = current_exe.parent / "_tuf_update.bat"
+                bat_path.write_text(
+                    "@echo off\r\n"
+                    "timeout /t 2 /nobreak >nul\r\n"
+                    f"move /y \"{tmp_path}\" \"{current_exe}\"\r\n"
+                    f"start \"\" \"{current_exe}\"\r\n"
+                    "del \"%~f0\"\r\n",
+                    encoding="ascii",
+                )
+
+                def _restart():
+                    subprocess.Popen(
+                        ["cmd", "/c", str(bat_path)],
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
+                    dlg.destroy()
+                    self._quit_app()
+
+                ctk.CTkLabel(
+                    btn_frame, text="런처를 재시작하면 업데이트가 적용됩니다.",
+                    font=ctk.CTkFont(size=11), text_color=C_SUBTEXT,
+                ).pack(pady=(0, 8))
+                ctk.CTkButton(
+                    btn_frame, text="지금 재시작", command=_restart, width=120,
+                    fg_color=C_ACCENT, hover_color=C_ACCENT_H, text_color="#ffffff",
+                ).pack(side="left", padx=8)
+                ctk.CTkButton(
+                    btn_frame, text="나중에", command=dlg.destroy, width=80,
+                    fg_color=C_BTN_SEC, hover_color=C_SURFACE,
+                    text_color=C_TEXT, border_color=C_BORDER, border_width=1,
+                ).pack(side="left", padx=8)
+            else:
+                ctk.CTkLabel(
+                    btn_frame, text=f"저장됨: {tmp_path.name}",
+                    font=ctk.CTkFont(size=11), text_color=C_SUBTEXT,
+                ).pack(pady=(0, 8))
+                ctk.CTkButton(btn_frame, text="확인", command=dlg.destroy, width=100).pack()
+
+        def _on_error(msg: str):
+            progress_label.configure(text=f"다운로드 실패: {msg}", text_color=C_DANGER)
+            btn_download.configure(state="normal")
+            btn_cancel.configure(state="normal")
+
+        if download_url:
+            btn_download = ctk.CTkButton(
+                btn_frame, text="업데이트 다운로드", command=_start_download, width=140,
+                fg_color=C_ACCENT, hover_color=C_ACCENT_H, text_color="#ffffff",
+            )
+            btn_download.pack(side="left", padx=8)
+
+        btn_cancel = ctk.CTkButton(
+            btn_frame, text="취소", command=dlg.destroy, width=80,
+            fg_color=C_BTN_SEC, hover_color=C_SURFACE,
+            text_color=C_TEXT, border_color=C_BORDER, border_width=1,
+        )
+        btn_cancel.pack(side="left", padx=8)
 
         dlg.update_idletasks()
         x = self.winfo_x() + (self.winfo_width()  - dlg.winfo_width())  // 2
