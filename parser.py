@@ -120,6 +120,7 @@ def _run_screp(screp_path: str, rep_path: str) -> str:
             text=True,
             encoding="utf-8",
             timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"screp 실행 시간 초과 (15초): {rep_path}")
