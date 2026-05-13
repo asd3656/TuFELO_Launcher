@@ -783,6 +783,9 @@ class App(ctk.CTk):
         if il.startswith('[') and ']' in il:
             if il[il.index(']') + 1:] == dl:
                 return True
+        # "ClanTag_PlayerName" → 언더바 뒤 이름만 비교
+        if '_' in il and il.split('_', 1)[1] == dl:
+            return True
         return False
 
     def _find_clan_member(self, replay_name: str) -> dict | None:
