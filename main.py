@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import time
+import winreg
 from pathlib import Path
 import webbrowser
 import tkinter as tk
@@ -24,7 +25,7 @@ import parser as rep_parser
 # 상수 / 컬러 팔레트 (ELO 보드 톤)
 # ──────────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 
 
 def _app_dir() -> Path:
@@ -109,6 +110,45 @@ def _is_version_outdated(local: str, server: str) -> bool:
         return local != server
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# 시작프로그램 등록
+# ──────────────────────────────────────────────────────────────────────────────
+
+_STARTUP_REG_KEY  = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_STARTUP_REG_NAME = "TuFlauncher"
+
+
+def _get_exe_path() -> str:
+    if getattr(sys, "frozen", False):
+        return sys.executable
+    return str(Path(__file__).resolve())
+
+
+def _startup_cmd() -> str:
+    return '"' + _get_exe_path() + '" --tray'
+
+
+def _is_startup_registered() -> bool:
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY) as key:
+            val, _ = winreg.QueryValueEx(key, _STARTUP_REG_NAME)
+            return val == _startup_cmd()
+    except FileNotFoundError:
+        return False
+
+
+def _set_startup(enabled: bool) -> None:
+    with winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0, winreg.KEY_SET_VALUE
+    ) as key:
+        if enabled:
+            winreg.SetValueEx(key, _STARTUP_REG_NAME, 0, winreg.REG_SZ, _startup_cmd())
+        else:
+            try:
+                winreg.DeleteValue(key, _STARTUP_REG_NAME)
+            except FileNotFoundError:
+                pass
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Watchdog
@@ -148,6 +188,7 @@ class App(ctk.CTk):
         self._version_outdated  = False
         self._notice_text       = ""
         self._tray_icon: pystray.Icon | None = None
+        self._sending_count = 0
 
         self.title(f"TuFlauncher v{APP_VERSION}")
         self.geometry("820x780")
@@ -161,6 +202,9 @@ class App(ctk.CTk):
         self._build_ui()
         self._load_ui_from_config()
         self._setup_tray()
+
+        if "--tray" in sys.argv:
+            self.withdraw()
 
         self.after(100, self._flush_log)
         threading.Thread(target=self._init_app, daemon=True).start()
@@ -332,6 +376,16 @@ class App(ctk.CTk):
             text_color=C_TEXT, border_color=C_BORDER, border_width=1,
             corner_radius=10,
             command=self._save_settings,
+        ).pack(side="left", padx=(0, 8))
+
+        self._startup_var = tk.BooleanVar(value=_is_startup_registered())
+        ctk.CTkCheckBox(
+            ctrl, text="시작 시 자동실행",
+            variable=self._startup_var,
+            command=self._on_startup_toggle,
+            font=ctk.CTkFont(size=12), text_color=C_TEXT,
+            fg_color=C_ACCENT, hover_color=C_ACCENT_H,
+            checkmark_color="#ffffff",
         ).pack(side="left", padx=(0, 8))
 
         _links = [
@@ -629,6 +683,18 @@ class App(ctk.CTk):
         self._cfg["log_font_size"]          = self._log_font_size
         save_config(self._cfg)
         self._log("설정이 TuFconfig.json에 저장되었습니다.")
+
+    def _on_startup_toggle(self) -> None:
+        enabled = self._startup_var.get()
+        try:
+            _set_startup(enabled)
+            if enabled:
+                self._log("[설정] Windows 시작 시 TuFlauncher 자동실행이 등록되었습니다.")
+            else:
+                self._log("[설정] Windows 시작 시 자동실행이 해제되었습니다.")
+        except Exception as e:
+            self._log(f"[오류] 시작프로그램 설정 실패: {e}")
+            self._startup_var.set(not enabled)
 
     def _open_folder(self):
         path = self.folder_entry.get().strip()
@@ -1375,79 +1441,95 @@ class App(ctk.CTk):
     def _send_pending_match(self, idx: int, opp_member: dict) -> None:
         if idx >= len(self._pending_matches):
             return
-        match_data  = self._pending_matches[idx]
-        short_hash  = match_data["replay_hash"][:8]
-        result_str  = "승리" if match_data["player1_won"] else "패배"
-        opp_name    = opp_member["name"]
+        match_data = self._pending_matches.pop(idx)
+        self._pending_check_vars.pop(idx)
+        self._pending_check_widgets.pop(idx).destroy()
 
-        try:
-            database.send_match(
-                tier_p1     = match_data["me_tier"],
-                name_p1     = match_data["me_name"],
-                tier_p2     = self._fmt_tier(opp_member.get("tier")),
-                name_p2     = opp_name,
-                player1_won = match_data["player1_won"],
-                map         = match_data["map"],
-                match_type  = match_data["match_type"],
-                played_at   = match_data["played_at"],
-                replay_hash = match_data["replay_hash"],
-            )
-            self._log(
-                f"[수집 완료] 유형: {match_data['match_type']} | 맵: {match_data['map']} | "
-                f"{match_data['me_name']} {result_str} vs {opp_name} | hash: {short_hash}"
-            )
-            winner_log = match_data["me_name"] if match_data["player1_won"] else opp_name
-            loser_log  = opp_name if match_data["player1_won"] else match_data["me_name"]
-            self._flash_success(winner_log, loser_log, match_data["match_type"])
-        except DuplicateMatchError:
-            self._log(f"[중복] 이미 등록된 경기입니다. | hash: {short_hash}")
-        except RuntimeError as e:
-            self._log(f"[전송 실패] {e} | hash: {short_hash}")
-        except Exception as e:
-            self._log(f"[전송 오류] {e} | hash: {short_hash}")
-        finally:
-            self._pending_matches.pop(idx)
-            self._pending_check_vars.pop(idx)
-            widget = self._pending_check_widgets.pop(idx)
-            widget.destroy()
+        short_hash = match_data["replay_hash"][:8]
+        result_str = "승리" if match_data["player1_won"] else "패배"
+        opp_name   = opp_member["name"]
+        self._log(f"[전송 중] {match_data['me_name']} {result_str} vs {opp_name} ...")
+        self._sending_count += 1
+
+        def _do():
+            try:
+                database.send_match(
+                    tier_p1     = match_data["me_tier"],
+                    name_p1     = match_data["me_name"],
+                    tier_p2     = self._fmt_tier(opp_member.get("tier")),
+                    name_p2     = opp_name,
+                    player1_won = match_data["player1_won"],
+                    map         = match_data["map"],
+                    match_type  = match_data["match_type"],
+                    played_at   = match_data["played_at"],
+                    replay_hash = match_data["replay_hash"],
+                )
+                winner_log = match_data["me_name"] if match_data["player1_won"] else opp_name
+                loser_log  = opp_name if match_data["player1_won"] else match_data["me_name"]
+                self.after(0, lambda: self._log(
+                    f"[수집 완료] 유형: {match_data['match_type']} | 맵: {match_data['map']} | "
+                    f"{match_data['me_name']} {result_str} vs {opp_name} | hash: {short_hash}"
+                ))
+                self.after(0, lambda wl=winner_log, ll=loser_log, mt=match_data["match_type"]: self._flash_success(wl, ll, mt))
+            except DuplicateMatchError:
+                self.after(0, lambda: self._log(f"[중복] 이미 등록된 경기입니다. | hash: {short_hash}"))
+            except RuntimeError as e:
+                self.after(0, lambda err=str(e): self._log(f"[전송 실패] {err} | hash: {short_hash}"))
+            except Exception as e:
+                self.after(0, lambda err=str(e): self._log(f"[전송 오류] {err} | hash: {short_hash}"))
+            finally:
+                try:
+                    self.after(0, lambda: setattr(self, "_sending_count", self._sending_count - 1))
+                except Exception:
+                    pass
+
+        threading.Thread(target=_do, daemon=True).start()
 
     def _send_pending_double_match(self, idx: int, member1: dict, member2: dict) -> None:
         if idx >= len(self._pending_matches):
             return
-        match_data  = self._pending_matches[idx]
+        match_data  = self._pending_matches.pop(idx)
+        self._pending_check_vars.pop(idx)
+        self._pending_check_widgets.pop(idx).destroy()
+
         short_hash  = match_data["replay_hash"][:8]
         player1_won = match_data["player1_won"]
+        self._log(f"[전송 중] {member1['name']} vs {member2['name']} ...")
+        self._sending_count += 1
 
-        try:
-            database.send_match(
-                tier_p1=self._fmt_tier(member1.get("tier")),
-                name_p1=member1["name"],
-                tier_p2=self._fmt_tier(member2.get("tier")),
-                name_p2=member2["name"],
-                player1_won=player1_won,
-                map=match_data["map"],
-                match_type=match_data["match_type"],
-                played_at=match_data["played_at"],
-                replay_hash=match_data["replay_hash"],
-            )
-            winner_log = member1["name"] if player1_won else member2["name"]
-            loser_log  = member2["name"] if player1_won else member1["name"]
-            self._log(
-                f"[수집 완료] 유형: {match_data['match_type']} | 맵: {match_data['map']} | "
-                f"{winner_log} 승 vs {loser_log} | hash: {short_hash}"
-            )
-            self._flash_success(winner_log, loser_log, match_data["match_type"])
-        except DuplicateMatchError:
-            self._log(f"[중복] 이미 등록된 경기입니다. | hash: {short_hash}")
-        except RuntimeError as e:
-            self._log(f"[전송 실패] {e} | hash: {short_hash}")
-        except Exception as e:
-            self._log(f"[전송 오류] {e} | hash: {short_hash}")
-        finally:
-            self._pending_matches.pop(idx)
-            self._pending_check_vars.pop(idx)
-            widget = self._pending_check_widgets.pop(idx)
-            widget.destroy()
+        def _do():
+            try:
+                database.send_match(
+                    tier_p1=self._fmt_tier(member1.get("tier")),
+                    name_p1=member1["name"],
+                    tier_p2=self._fmt_tier(member2.get("tier")),
+                    name_p2=member2["name"],
+                    player1_won=player1_won,
+                    map=match_data["map"],
+                    match_type=match_data["match_type"],
+                    played_at=match_data["played_at"],
+                    replay_hash=match_data["replay_hash"],
+                )
+                winner_log = member1["name"] if player1_won else member2["name"]
+                loser_log  = member2["name"] if player1_won else member1["name"]
+                self.after(0, lambda: self._log(
+                    f"[수집 완료] 유형: {match_data['match_type']} | 맵: {match_data['map']} | "
+                    f"{winner_log} 승 vs {loser_log} | hash: {short_hash}"
+                ))
+                self.after(0, lambda wl=winner_log, ll=loser_log, mt=match_data["match_type"]: self._flash_success(wl, ll, mt))
+            except DuplicateMatchError:
+                self.after(0, lambda: self._log(f"[중복] 이미 등록된 경기입니다. | hash: {short_hash}"))
+            except RuntimeError as e:
+                self.after(0, lambda err=str(e): self._log(f"[전송 실패] {err} | hash: {short_hash}"))
+            except Exception as e:
+                self.after(0, lambda err=str(e): self._log(f"[전송 오류] {err} | hash: {short_hash}"))
+            finally:
+                try:
+                    self.after(0, lambda: setattr(self, "_sending_count", self._sending_count - 1))
+                except Exception:
+                    pass
+
+        threading.Thread(target=_do, daemon=True).start()
 
     def _delete_pending_matches(self) -> None:
         checked = [i for i, v in enumerate(self._pending_check_vars) if v.get()]
@@ -1615,7 +1697,7 @@ class App(ctk.CTk):
 
         menu = pystray.Menu(
             pystray.MenuItem("열기", lambda icon, item: self.after(0, self._restore_window), default=True),
-            pystray.MenuItem("종료", lambda icon, item: self._quit_app()),
+            pystray.MenuItem("종료", lambda icon, item: self.after(0, self._quit_app)),
         )
         self._tray_icon = pystray.Icon("TuFlauncher", img, "TuFlauncher", menu)
         threading.Thread(target=self._tray_icon.run, daemon=True).start()
@@ -1634,6 +1716,14 @@ class App(ctk.CTk):
         self.focus_force()
 
     def _quit_app(self, icon=None, item=None) -> None:
+        if self._sending_count > 0:
+            ans = messagebox.askyesno(
+                "전송 중",
+                f"전송 중인 데이터가 {self._sending_count}건 있습니다.\n"
+                "종료하면 전송이 취소될 수 있습니다.\n\n그래도 종료하시겠습니까?",
+            )
+            if not ans:
+                return
         self._stop_watcher()
         if self._tray_icon:
             self._tray_icon.stop()
