@@ -655,7 +655,7 @@ class App(ctk.CTk):
         is_maintenance = bool(s.get("is_maintenance", False))
         notice         = s.get("notice") or ""
         server_version = s.get("current_version")
-        screp_url      = s.get("screp_url")
+        download_url   = s.get("download_url")
 
         self._maintenance_mode = is_maintenance
         self._notice_text = notice
@@ -673,9 +673,9 @@ class App(ctk.CTk):
             self._version_outdated = True
             self._set_status(f"업데이트 필요 (v{server_version})", C_DANGER)
             self._log(f"[업데이트 필요] 현재: v{APP_VERSION} → 최신: v{server_version}")
-            if screp_url:
-                self._log(f"[업데이트] 다운로드: {screp_url}")
-            self._show_update_dialog(server_version, screp_url or "")
+            if download_url:
+                self._log(f"[업데이트] 다운로드: {download_url}")
+            self._show_update_dialog(server_version, download_url or "")
         elif server_version:
             self._log(f"[버전 확인] 최신 버전 (v{APP_VERSION})")
 
