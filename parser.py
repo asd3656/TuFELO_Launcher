@@ -197,7 +197,7 @@ def _extract_fields(data: dict) -> dict:
         "winner_team":      winner_team,
         "duration_seconds": duration,
         "played_at":        played_at,
-        "replay_hash":      _compute_hash(players, map_name, played_at, duration),
+        "replay_hash":      _compute_hash(players, map_name, played_at),
     }
 
 
@@ -284,7 +284,6 @@ def _compute_hash(
     players: list[dict],
     map_name: str,
     played_at: str,
-    duration: int,
 ) -> str:
     """
     리플레이 고유 지문을 SHA-256으로 생성합니다.
@@ -292,13 +291,13 @@ def _compute_hash(
     동일 게임을 두 플레이어가 각자 업로드해도 같은 해시가 나와야 하므로:
       - 플레이어 이름을 사전순 정렬 → player1/player2 순서에 무관
       - played_at을 분(MM) 단위까지만 사용 → 초 단위 파일 저장 시각 오차 흡수
+      - duration 제외 → 두 클라이언트의 Frames 값이 네트워크 딜레이로 1~2초 다를 수 있음
     """
     sorted_names = sorted(p["name"] for p in players)
     raw = "|".join([
         *sorted_names,
         map_name,
         played_at[:16],  # "YYYY-MM-DDTHH:MM"
-        str(duration),
     ])
     return hashlib.sha256(raw.encode()).hexdigest()
 
