@@ -828,7 +828,7 @@ class App(ctk.CTk):
                     "@echo off\r\n"
                     "timeout /t 5 /nobreak >nul\r\n"
                     f"move /y \"{tmp_path}\" \"{current_exe}\"\r\n"
-                    f"start \"\" \"{current_exe}\"\r\n"
+                    f"explorer.exe \"{current_exe}\"\r\n"
                     "del \"%~f0\"\r\n",
                     encoding="ascii",
                 )
