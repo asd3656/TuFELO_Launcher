@@ -655,7 +655,7 @@ class App(ctk.CTk):
         is_maintenance = bool(s.get("is_maintenance", False))
         notice         = s.get("notice") or ""
         server_version = s.get("current_version")
-        download_url   = s.get("download_url")
+        screp_url   = s.get("screp_url")
 
         self._maintenance_mode = is_maintenance
         self._notice_text = notice
@@ -673,13 +673,13 @@ class App(ctk.CTk):
             self._version_outdated = True
             self._set_status(f"업데이트 필요 (v{server_version})", C_DANGER)
             self._log(f"[업데이트 필요] 현재: v{APP_VERSION} → 최신: v{server_version}")
-            if download_url:
-                self._log(f"[업데이트] 다운로드: {download_url}")
-            self._show_update_dialog(server_version, download_url or "")
+            if screp_url:
+                self._log(f"[업데이트] 다운로드: {screp_url}")
+            self._show_update_dialog(server_version, screp_url or "")
         elif server_version:
             self._log(f"[버전 확인] 최신 버전 (v{APP_VERSION})")
 
-    def _show_update_dialog(self, server_version: str, download_url: str) -> None:
+    def _show_update_dialog(self, server_version: str, screp_url: str) -> None:
         import requests as _requests
 
         dlg = ctk.CTkToplevel(self)
@@ -722,7 +722,7 @@ class App(ctk.CTk):
                     else:
                         tmp_path = Path(__file__).parent / f"TuFlauncher_v{server_version}.exe"
 
-                    resp = _requests.get(download_url, stream=True, timeout=30)
+                    resp = _requests.get(screp_url, stream=True, timeout=30)
                     resp.raise_for_status()
                     total = int(resp.headers.get("content-length", 0))
                     downloaded = 0
@@ -795,7 +795,7 @@ class App(ctk.CTk):
             btn_download.configure(state="normal")
             btn_cancel.configure(state="normal")
 
-        if download_url:
+        if screp_url:
             btn_download = ctk.CTkButton(
                 btn_frame, text="업데이트 다운로드", command=_start_download, width=140,
                 fg_color=C_ACCENT, hover_color=C_ACCENT_H, text_color="#ffffff",

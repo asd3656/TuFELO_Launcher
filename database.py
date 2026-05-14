@@ -31,14 +31,14 @@ def fetch_settings() -> dict:
     반환값:
     {
         "current_version": str | None,
-        "download_url":    str | None,
+        "screp_url":    str | None,
         "notice":          str | None,
         "is_maintenance":  bool
     }
     """
     defaults = {
         "current_version": None,
-        "download_url": None,
+        "screp_url": None,
         "notice": None,
         "is_maintenance": False,
     }
@@ -47,7 +47,7 @@ def fetch_settings() -> dict:
             f"{_SUPABASE_URL}/rest/v1/settings",
             headers=_supabase_headers(),
             params={
-                "select": "current_version,download_url,notice,is_maintenance",
+                "select": "current_version,screp_url,notice,is_maintenance",
                 "id": "eq.1",
                 "limit": "1",
             },
