@@ -803,6 +803,11 @@ class App(ctk.CTk):
                                     dlg.after(0, lambda p=pct: progress_label.configure(
                                         text=f"다운로드 중... {int(p * 100)}%"
                                     ))
+                    subprocess.run(
+                        ["powershell", "-Command", f"Unblock-File -LiteralPath '{tmp_path}'"],
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                        capture_output=True,
+                    )
                     dlg.after(0, lambda: _on_done(tmp_path))
                 except Exception as e:
                     dlg.after(0, lambda err=str(e): _on_error(err))
@@ -821,7 +826,7 @@ class App(ctk.CTk):
                 bat_path = current_exe.parent / "_tuf_update.bat"
                 bat_path.write_text(
                     "@echo off\r\n"
-                    "timeout /t 2 /nobreak >nul\r\n"
+                    "timeout /t 5 /nobreak >nul\r\n"
                     f"move /y \"{tmp_path}\" \"{current_exe}\"\r\n"
                     f"start \"\" \"{current_exe}\"\r\n"
                     "del \"%~f0\"\r\n",
