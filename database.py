@@ -1,4 +1,7 @@
 import requests
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class DuplicateMatchError(Exception):
@@ -52,6 +55,7 @@ def fetch_settings() -> dict:
                 "limit": "1",
             },
             timeout=10,
+            verify=False,
         )
         response.raise_for_status()
         data = response.json()
@@ -82,6 +86,7 @@ def fetch_all_members() -> list[dict]:
                 "order": "name",
             },
             timeout=10,
+            verify=False,
         )
         response.raise_for_status()
         return response.json() or []
@@ -121,10 +126,10 @@ def send_match(
     row = [tier_p1, name_p1, result1, result2, name_p2, tier_p2, map, match_type, "", "", played_at, replay_hash]
     payload = {"rows": [row]}
 
-    resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=15, allow_redirects=False)
+    resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=15, allow_redirects=False, verify=False)
     location = resp.headers.get("Location")
     if location:
-        resp = requests.get(location, timeout=15)
+        resp = requests.get(location, timeout=15, verify=False)
 
     resp.raise_for_status()
     try:

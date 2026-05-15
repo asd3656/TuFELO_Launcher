@@ -25,7 +25,7 @@ import parser as rep_parser
 # 상수 / 컬러 팔레트 (ELO 보드 톤)
 # ──────────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 
 
 def _app_dir() -> Path:
@@ -788,7 +788,7 @@ class App(ctk.CTk):
                     else:
                         tmp_path = Path(__file__).parent / f"TuFlauncher_v{server_version}.exe"
 
-                    resp = _requests.get(screp_url, stream=True, timeout=30)
+                    resp = _requests.get(screp_url, stream=True, timeout=30, verify=False)
                     resp.raise_for_status()
                     total = int(resp.headers.get("content-length", 0))
                     downloaded = 0
