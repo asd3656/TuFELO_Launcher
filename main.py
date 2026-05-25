@@ -763,6 +763,7 @@ class App(ctk.CTk):
             self._log(f"[업데이트 필요] 현재: v{APP_VERSION} → 최신: v{server_version}")
             if screp_url:
                 self._log(f"[업데이트] 다운로드: {screp_url}")
+            self._restore_window()
             self._show_update_dialog(server_version, screp_url or "")
         elif server_version:
             self._log(f"[버전 확인] 최신 버전 (v{APP_VERSION})")
