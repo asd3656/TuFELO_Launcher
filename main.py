@@ -25,7 +25,7 @@ import parser as rep_parser
 # 상수 / 컬러 팔레트 (ELO 보드 톤)
 # ──────────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 
 
 def _app_dir() -> Path:
@@ -180,7 +180,7 @@ class App(ctk.CTk):
         self._stop_event: threading.Event | None = None
         self._watcher_thread: threading.Thread | None = None
         self._active_me: dict | None = None  # 감시 시작 시점에 캡처된 나
-        self._active_additional_name: str = ""  # 감시 시작 시점에 캡처된 추가 닉네임
+        self._active_additional_name: list[str] = []  # 감시 시작 시점에 캡처된 추가 닉네임들
         self._pending_matches: list[dict] = []
         self._log_font_size     = 12
         self._base_status_text  = "연결 중..."
@@ -300,32 +300,33 @@ class App(ctk.CTk):
         ).grid(row=1, column=3, padx=(0, 16), pady=(0, 14))
 
         ctk.CTkLabel(
-            mc, text="추가 닉네임", font=ctk.CTkFont(size=13), text_color=C_TEXT,
+            mc, text="추가 닉네임(본인)", font=ctk.CTkFont(size=13), text_color=C_TEXT,
         ).grid(row=2, column=0, padx=16, pady=(0, 14), sticky="w")
 
-        self.additional_name_entry = ctk.CTkEntry(
-            mc,
-            placeholder_text="인게임 추가 닉네임 (선택사항)...",
-            fg_color=C_SURFACE, border_color=C_BORDER,
-            text_color=C_TEXT, font=ctk.CTkFont(size=13),
-            corner_radius=8,
-        )
-        self.additional_name_entry.grid(row=2, column=1, padx=(0, 8), pady=(0, 14), sticky="ew")
-        self.additional_name_entry.bind("<Return>", lambda e: self._confirm_additional_name())
+        _add_frame = ctk.CTkFrame(mc, fg_color="transparent")
+        _add_frame.grid(row=2, column=1, padx=(0, 8), pady=(0, 14), sticky="ew")
+        _add_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
+        self.additional_name_entries: list[ctk.CTkEntry] = []
+        for _i, _ph in enumerate(["추가 닉네임 1", "추가 닉네임 2", "추가 닉네임 3"]):
+            _e = ctk.CTkEntry(
+                _add_frame,
+                placeholder_text=_ph,
+                fg_color=C_SURFACE, border_color=C_BORDER,
+                text_color=C_TEXT, font=ctk.CTkFont(size=13),
+                corner_radius=8,
+            )
+            _padx = (0, 6) if _i < 2 else (0, 0)
+            _e.grid(row=0, column=_i, padx=_padx, sticky="ew")
+            _e.bind("<Return>", lambda _: self._confirm_additional_name())
+            self.additional_name_entries.append(_e)
 
         ctk.CTkButton(
             mc, text="확인", width=60, height=32,
             fg_color=C_ACCENT, hover_color=C_ACCENT_H,
             text_color="#ffffff", corner_radius=8,
             command=self._confirm_additional_name,
-        ).grid(row=2, column=2, padx=(0, 8), pady=(0, 14))
-
-        ctk.CTkButton(
-            mc, text="삭제", width=60, height=32,
-            fg_color=C_RED, hover_color=C_RED_H,
-            text_color="#ffffff", corner_radius=8,
-            command=self._delete_additional_name,
-        ).grid(row=2, column=3, padx=(0, 16), pady=(0, 14))
+        ).grid(row=2, column=2, columnspan=2, padx=(0, 16), pady=(0, 14))
 
         # ── 폴더 카드 ──────────────────────────────────────────────────────────
         fc = ctk.CTkFrame(content, fg_color=C_CARD, corner_radius=12)
@@ -378,11 +379,20 @@ class App(ctk.CTk):
             command=self._save_settings,
         ).pack(side="left", padx=(0, 8))
 
-        self._startup_var = tk.BooleanVar(value=_is_startup_registered())
+        self._startup_var = tk.BooleanVar(value=True)
         ctk.CTkCheckBox(
             ctrl, text="시작 시 자동실행",
             variable=self._startup_var,
             command=self._on_startup_toggle,
+            font=ctk.CTkFont(size=12), text_color=C_TEXT,
+            fg_color=C_ACCENT, hover_color=C_ACCENT_H,
+            checkmark_color="#ffffff",
+        ).pack(side="left", padx=(0, 8))
+
+        self._notify_var = tk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            ctrl, text="알림설정",
+            variable=self._notify_var,
             font=ctk.CTkFont(size=12), text_color=C_TEXT,
             fg_color=C_ACCENT, hover_color=C_ACCENT_H,
             checkmark_color="#ffffff",
@@ -664,23 +674,31 @@ class App(ctk.CTk):
         saved = self._cfg.get("selected_member_name", "")
         if saved:
             self._ac_set(saved)
-        additional = self._cfg.get("additional_ingame_name", "")
-        if additional:
-            self.additional_name_entry.insert(0, additional)
+        additional_list = self._cfg.get("additional_ingame_names", [])
+        if not additional_list:
+            old = self._cfg.get("additional_ingame_name", "")
+            if old:
+                additional_list = [old]
+        for _i, _name in enumerate(additional_list[:3]):
+            if _name:
+                self.additional_name_entries[_i].insert(0, _name)
         if geo := self._cfg.get("window_geometry"):
             self.geometry(geo)
         if font_size := self._cfg.get("log_font_size"):
             self._log_font_size = int(font_size)
             self.log_box.configure(font=ctk.CTkFont(family="Consolas", size=self._log_font_size))
+        self._notify_var.set(self._cfg.get("notify_enabled", True))
+        self._startup_var.set(_is_startup_registered())
 
     def _save_settings(self):
         me = self._selected_member()
         self._cfg["replay_folder"]          = self.folder_entry.get().strip()
         self._cfg["selected_member_id"]     = me["id"]   if me else ""
         self._cfg["selected_member_name"]   = me["name"] if me else self.member_entry.get().strip()
-        self._cfg["additional_ingame_name"] = self.additional_name_entry.get().strip()
+        self._cfg["additional_ingame_names"] = [e.get().strip() for e in self.additional_name_entries if e.get().strip()]
         self._cfg["window_geometry"]        = self.geometry()
         self._cfg["log_font_size"]          = self._log_font_size
+        self._cfg["notify_enabled"]         = self._notify_var.get()
         save_config(self._cfg)
         self._log("설정이 TuFconfig.json에 저장되었습니다.")
 
@@ -695,6 +713,10 @@ class App(ctk.CTk):
         except Exception as e:
             self._log(f"[오류] 시작프로그램 설정 실패: {e}")
             self._startup_var.set(not enabled)
+
+    def _notify(self, title: str, msg: str) -> None:
+        if self._notify_var.get():
+            threading.Thread(target=_send_notification, args=(title, msg), daemon=True).start()
 
     def _open_folder(self):
         path = self.folder_entry.get().strip()
@@ -927,17 +949,12 @@ class App(ctk.CTk):
             self._log(f"[닉네임] 입력 실패 — '{name}' 닉네임이 클랜원 목록에 없습니다.")
 
     def _confirm_additional_name(self) -> None:
-        name = self.additional_name_entry.get().strip()
-        self._active_additional_name = name
-        if name:
-            self._log(f"[추가 닉네임] '{name}' 이(가) 추가 닉네임으로 설정되었습니다.")
-        else:
-            self._log("[추가 닉네임] 추가 닉네임이 지워졌습니다.")
-
-    def _delete_additional_name(self) -> None:
-        self.additional_name_entry.delete(0, "end")
-        self._active_additional_name = ""
-        self._log("[추가 닉네임] 추가 닉네임이 삭제되었습니다.")
+        names = [e.get().strip() for e in self.additional_name_entries if e.get().strip()]
+        self._active_additional_name = names
+        me = self._selected_member()
+        me_name = me["name"] if me else "(미설정)"
+        additional_str = ", ".join(names) if names else "없음"
+        self._log(f"[닉네임 설정] 닉네임: {me_name} | 추가 닉네임: {additional_str}")
 
     @staticmethod
     def _fmt_tier(raw) -> str:
@@ -1010,7 +1027,7 @@ class App(ctk.CTk):
             return
 
         self._active_me = me
-        self._active_additional_name = self.additional_name_entry.get().strip()
+        self._active_additional_name = [e.get().strip() for e in self.additional_name_entries if e.get().strip()]
         self._cfg["selected_member_id"]   = me["id"]
         self._cfg["selected_member_name"] = me["name"]
 
@@ -1023,7 +1040,8 @@ class App(ctk.CTk):
         self.btn_launch.configure(
             text="런처 중지", fg_color=C_RED, hover_color=C_RED_H,
         )
-        self._log(f"[시작] 닉네임: {me['name']} | 폴더: {folder}")
+        additional_str = ", ".join(self._active_additional_name) if self._active_additional_name else "없음"
+        self._log(f"[시작] 닉네임: {me['name']} | 추가 닉네임: {additional_str} | 폴더: {folder}")
 
     def _stop_watcher(self):
         if self._stop_event:
@@ -1099,7 +1117,7 @@ class App(ctk.CTk):
         user_player = next(
             (p for p in players
              if self._name_matches(me_name, p["name"])
-             or (additional and additional.lower() == p["name"].lower())),
+             or any(a.lower() == p["name"].lower() for a in additional)),
             None,
         )
         if user_player is None:
@@ -1159,6 +1177,7 @@ class App(ctk.CTk):
             winner_log = me_name if player1_won else opp_name
             loser_log  = opp_name if player1_won else me_name
             self.after(0, lambda wl=winner_log, ll=loser_log, mt=match_type: self._flash_success(wl, ll, mt))
+            self._notify("전적 전송 완료", f"{winner_log} 승 vs {loser_log}  [{match_type}]")
         except DuplicateMatchError:
             self._log(f"[중복] 이미 등록된 경기입니다. (상대방이 먼저 업로드) | hash: {short_hash}")
         except RuntimeError as e:
@@ -1203,6 +1222,7 @@ class App(ctk.CTk):
                     f"{winner_log} 승 vs {loser_log} | hash: {short_hash}"
                 )
                 self.after(0, lambda wl=winner_log, ll=loser_log, mt=match_type: self._flash_success(wl, ll, mt))
+                self._notify("전적 전송 완료", f"{winner_log} 승 vs {loser_log}  [{match_type}]")
             except DuplicateMatchError:
                 self._log(f"[중복] 이미 등록된 경기입니다. | hash: {short_hash}")
             except RuntimeError as e:
@@ -1293,11 +1313,13 @@ class App(ctk.CTk):
                     f"[미확인 쌍] P1={match_data['p1_raw_name']}, P2={match_data['p2_raw_name']} "
                     "— 두 선수 모두 클랜원 목록에 없습니다. 패널에서 직접 입력하세요."
                 )
+                self._notify("닉네임 확인 필요", f"미확인 상대: {match_data['p1_raw_name']}, {match_data['p2_raw_name']}\n런처에서 직접 입력해 주세요.")
             else:
                 self._log(
                     f"[미확인 상대] '{match_data['opp_raw_name']}' 이(가) 클랜원 목록에 없습니다 "
                     f"— 미확인 상대 패널에서 선수 입력 후 전송하세요."
                 )
+                self._notify("닉네임 확인 필요", f"미확인 상대: {match_data['opp_raw_name']}\n런처에서 직접 입력해 주세요.")
         except Exception as e:
             self._log(f"[미확인 상대 오류] {e}")
 
@@ -1476,6 +1498,7 @@ class App(ctk.CTk):
                     f"{match_data['me_name']} {result_str} vs {opp_name} | hash: {short_hash}"
                 ))
                 self.after(0, lambda wl=winner_log, ll=loser_log, mt=match_data["match_type"]: self._flash_success(wl, ll, mt))
+                self._notify("전적 전송 완료", f"{winner_log} 승 vs {loser_log}  [{match_data['match_type']}]")
             except DuplicateMatchError:
                 self.after(0, lambda: self._log(f"[중복] 이미 등록된 경기입니다. | hash: {short_hash}"))
             except RuntimeError as e:
@@ -1522,6 +1545,7 @@ class App(ctk.CTk):
                     f"{winner_log} 승 vs {loser_log} | hash: {short_hash}"
                 ))
                 self.after(0, lambda wl=winner_log, ll=loser_log, mt=match_data["match_type"]: self._flash_success(wl, ll, mt))
+                self._notify("전적 전송 완료", f"{winner_log} 승 vs {loser_log}  [{match_data['match_type']}]")
             except DuplicateMatchError:
                 self.after(0, lambda: self._log(f"[중복] 이미 등록된 경기입니다. | hash: {short_hash}"))
             except RuntimeError as e:
@@ -1709,11 +1733,7 @@ class App(ctk.CTk):
 
     def _hide_to_tray(self) -> None:
         self.withdraw()
-        threading.Thread(
-            target=_send_notification,
-            args=("TuFlauncher", "런처가 백그라운드에서 실행 중입니다."),
-            daemon=True,
-        ).start()
+        self._notify("TuFlauncher", "런처가 백그라운드에서 실행 중입니다.")
 
     def _restore_window(self) -> None:
         self.deiconify()
@@ -1742,10 +1762,37 @@ class App(ctk.CTk):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 단일 인스턴스 잠금
+# ──────────────────────────────────────────────────────────────────────────────
+
+import ctypes
+
+_MUTEX_HANDLE = None
+_MUTEX_NAME   = "TuFlauncher_SingleInstance_Mutex"
+
+
+def _acquire_single_instance_lock() -> bool:
+    """뮤텍스를 생성해 단일 인스턴스를 보장합니다. 이미 실행 중이면 False를 반환합니다."""
+    global _MUTEX_HANDLE
+    _MUTEX_HANDLE = ctypes.windll.kernel32.CreateMutexW(None, True, _MUTEX_NAME)
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ──────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    if not _acquire_single_instance_lock():
+        _root = tk.Tk()
+        _root.withdraw()
+        messagebox.showwarning(
+            "이미 실행 중",
+            "TuFlauncher가 이미 실행 중입니다.\n시스템 트레이를 확인해 주세요.",
+        )
+        _root.destroy()
+        sys.exit(0)
+
     app = App()
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
     app.mainloop()
