@@ -1632,7 +1632,9 @@ class App(ctk.CTk):
         self.log_box.configure(font=ctk.CTkFont(family="Consolas", size=self._log_font_size))
 
     def _log(self, msg: str) -> None:
-        self._log_queue.put(msg)
+        from datetime import datetime
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._log_queue.put(f"{msg} [{ts}]")
 
     def _flush_log(self) -> None:
         while not self._log_queue.empty():
