@@ -30,7 +30,7 @@ TuF 클랜 ELO 시스템 연동 런처입니다.
 ## 사용 방법
 
 1. **`TuFlauncher.exe`** 를 실행합니다.
-2. **닉네임** 본인 닉네임을 입력합니다.
+2. **닉네임** 본인 닉네임을 입력합니다.(TuF`는 생략입니다)
 3. **리플레이 폴더** 경로를 확인합니다.  
    기본값: `내 문서\StarCraft\Maps\Replays`
    예시(제작자기준) : C:\Users\사용자pc이름\Documents\StarCraft\Maps\Replays
