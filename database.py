@@ -135,7 +135,8 @@ def send_match(
     try:
         result = resp.json()
     except Exception:
-        return  # HTTP 200 OK + non-JSON 응답 → 시트 기록 성공으로 간주
+        body = resp.text[:300] if resp.text else "(빈 응답)"
+        raise RuntimeError(f"Apps Script 응답이 JSON이 아닙니다. 상태코드={resp.status_code}, 내용={body}")
     if result.get("status") == "duplicate":
         raise DuplicateMatchError("이미 등록된 경기입니다. (다른 클랜원이 먼저 업로드)")
     if result.get("status") == "error":
