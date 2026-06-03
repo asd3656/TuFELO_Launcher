@@ -74,14 +74,15 @@ def fetch_all_members() -> list[dict]:
     """
     is_active=True인 모든 클랜원을 이름순으로 반환합니다.
 
-    반환값: [{"id": uuid_str, "name": str, "tier": str | None}, ...]
+    반환값: [{"id": uuid_str, "name": str, "tier": str | None, "race": str | None}, ...]
+    race 값: "T" (테란), "Z" (저그), "P" (프로토스), None (미설정)
     """
     try:
         response = requests.get(
             f"{_SUPABASE_URL}/rest/v1/members",
             headers=_supabase_headers(),
             params={
-                "select": "id,name,tier",
+                "select": "id,name,tier,race",
                 "is_active": "eq.true",
                 "order": "name",
             },

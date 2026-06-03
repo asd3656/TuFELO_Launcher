@@ -402,6 +402,7 @@ class App(ctk.CTk):
             ("ELO보드",  "https://tufelo.vercel.app/"),
             ("승부예측", "https://tufpl.vercel.app/"),
             ("전적시트", "https://docs.google.com/spreadsheets/d/1kKeA8Y8AmO99qS6v4Xsu_95z6kdKnXL8DXLSLXoCUx8/edit?gid=1549482567#gid=1549482567"),
+            ("홈페이지", "https://tufclan.com"),
         ]
         for name, url in _links:
             ctk.CTkButton(
@@ -419,14 +420,6 @@ class App(ctk.CTk):
             command=self._toggle_watcher,
         )
         self.btn_launch.pack(side="right")
-
-        ctk.CTkButton(
-            ctrl, text="공지", width=60, height=36,
-            fg_color=C_BTN_SEC, hover_color=C_SURFACE,
-            text_color=C_TEXT, border_color=C_BORDER, border_width=1,
-            corner_radius=10,
-            command=self._show_notice,
-        ).pack(side="right", padx=(0, 8))
 
         # ── 미확인 상대 패널 ───────────────────────────────────────────────────
         pc = ctk.CTkFrame(content, fg_color=C_CARD, corner_radius=12)
@@ -624,6 +617,14 @@ class App(ctk.CTk):
 
         font_ctrl = ctk.CTkFrame(log_hdr, fg_color="transparent")
         font_ctrl.grid(row=0, column=1, sticky="e")
+
+        ctk.CTkButton(
+            font_ctrl, text="공지", width=44, height=24,
+            fg_color=C_BTN_SEC, hover_color=C_SURFACE,
+            text_color=C_SUBTEXT, border_color=C_BORDER, border_width=1,
+            corner_radius=6, font=ctk.CTkFont(size=11),
+            command=self._show_notice,
+        ).pack(side="left", padx=(0, 4))
 
         ctk.CTkButton(
             font_ctrl, text="A-", width=30, height=24,
@@ -988,6 +989,30 @@ class App(ctk.CTk):
                 return member
         return None
 
+    _RACE_NAMES = {"T": "테란", "Z": "저그", "P": "프로토스", "R": "랜덤"}
+
+    def _check_race_mismatch(self, member: dict | None, replay_race: str, short_hash: str) -> bool:
+        """종족 불일치 또는 랜덤이면 [전송 실패] 로그를 남기고 True 반환."""
+        if member is None:
+            return False
+        db_race = (member.get("race") or "").strip().upper()
+        if not db_race or replay_race in ("?", ""):
+            return False
+        if replay_race == "R":
+            self._log(
+                f"[전송 실패] {member['name']}의 종족이 랜덤입니다. | hash: {short_hash}"
+            )
+            return True
+        if db_race == replay_race:
+            return False
+        db_name = self._RACE_NAMES.get(db_race, db_race)
+        replay_name = self._RACE_NAMES.get(replay_race, replay_race)
+        self._log(
+            f"[전송 실패] {member['name']}의 종족이 주종족과 일치하지 않습니다. "
+            f"(DB: {db_name} / 리플레이: {replay_name}) | hash: {short_hash}"
+        )
+        return True
+
     # ── 감시 제어 ──────────────────────────────────────────────────────────────
 
     def _toggle_watcher(self):
@@ -1147,7 +1172,10 @@ class App(ctk.CTk):
             match_data = {
                 "me_name":      me_name,
                 "me_tier":      me_tier,
+                "me_race":      user_player["race"],
+                "me_db_race":   me.get("race", "") if me else "",
                 "opp_raw_name": opp_raw_name,
+                "opp_race":     opp_player["race"],
                 "player1_won":  player1_won,
                 "map":          parsed["map_name"],
                 "match_type":   match_type,
@@ -1157,7 +1185,12 @@ class App(ctk.CTk):
             self.after(0, lambda d=match_data: self._add_pending_match(d))
             return
 
-        # 7. 클랜원 확인됨 → Apps Script로 전송
+        # 7. 클랜원 확인됨 → 종족 검증 후 Apps Script로 전송
+        if self._check_race_mismatch(me, user_player["race"], short_hash):
+            return
+        if self._check_race_mismatch(opp_member, opp_player["race"], short_hash):
+            return
+
         opp_name = opp_member["name"]
         try:
             database.send_match(
@@ -1204,6 +1237,10 @@ class App(ctk.CTk):
 
         if member1 and member2:
             player1_won = winner_name.lower() == p1["name"].lower()
+            if self._check_race_mismatch(member1, p1["race"], short_hash):
+                return
+            if self._check_race_mismatch(member2, p2["race"], short_hash):
+                return
             try:
                 database.send_match(
                     tier_p1=self._fmt_tier(member1.get("tier")),
@@ -1237,7 +1274,10 @@ class App(ctk.CTk):
             match_data = {
                 "me_name":      member1["name"],
                 "me_tier":      self._fmt_tier(member1.get("tier")),
+                "me_race":      p1["race"],
+                "me_db_race":   member1.get("race", ""),
                 "opp_raw_name": p2["name"],
+                "opp_race":     p2["race"],
                 "player1_won":  player1_won,
                 "map":          parsed["map_name"],
                 "match_type":   match_type,
@@ -1252,7 +1292,10 @@ class App(ctk.CTk):
             match_data = {
                 "me_name":      member2["name"],
                 "me_tier":      self._fmt_tier(member2.get("tier")),
+                "me_race":      p2["race"],
+                "me_db_race":   member2.get("race", ""),
                 "opp_raw_name": p1["name"],
+                "opp_race":     p1["race"],
                 "player1_won":  player1_won,
                 "map":          parsed["map_name"],
                 "match_type":   match_type,
@@ -1276,6 +1319,8 @@ class App(ctk.CTk):
                 "both_unmatched": True,
                 "p1_raw_name":    p1["name"],
                 "p2_raw_name":    p2["name"],
+                "p1_race":        p1["race"],
+                "p2_race":        p2["race"],
             }
             self.after(0, lambda d=match_data: self._add_pending_match(d))
 
@@ -1469,11 +1514,19 @@ class App(ctk.CTk):
     def _send_pending_match(self, idx: int, opp_member: dict) -> None:
         if idx >= len(self._pending_matches):
             return
-        match_data = self._pending_matches.pop(idx)
+        match_data = self._pending_matches[idx]
+        short_hash = match_data["replay_hash"][:8]
+
+        me_fake = {"name": match_data["me_name"], "race": match_data.get("me_db_race", "")}
+        if self._check_race_mismatch(me_fake, match_data.get("me_race", "?"), short_hash):
+            return
+        if self._check_race_mismatch(opp_member, match_data.get("opp_race", "?"), short_hash):
+            return
+
+        self._pending_matches.pop(idx)
         self._pending_check_vars.pop(idx)
         self._pending_check_widgets.pop(idx).destroy()
 
-        short_hash = match_data["replay_hash"][:8]
         result_str = "승리" if match_data["player1_won"] else "패배"
         opp_name   = opp_member["name"]
         self._log(f"[전송 중] {match_data['me_name']} {result_str} vs {opp_name} ...")
@@ -1517,11 +1570,18 @@ class App(ctk.CTk):
     def _send_pending_double_match(self, idx: int, member1: dict, member2: dict) -> None:
         if idx >= len(self._pending_matches):
             return
-        match_data  = self._pending_matches.pop(idx)
+        match_data  = self._pending_matches[idx]
+        short_hash  = match_data["replay_hash"][:8]
+
+        if self._check_race_mismatch(member1, match_data.get("p1_race", "?"), short_hash):
+            return
+        if self._check_race_mismatch(member2, match_data.get("p2_race", "?"), short_hash):
+            return
+
+        self._pending_matches.pop(idx)
         self._pending_check_vars.pop(idx)
         self._pending_check_widgets.pop(idx).destroy()
 
-        short_hash  = match_data["replay_hash"][:8]
         player1_won = match_data["player1_won"]
         self._log(f"[전송 중] {member1['name']} vs {member2['name']} ...")
         self._sending_count += 1
