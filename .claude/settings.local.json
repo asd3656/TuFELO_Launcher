@@ -3,7 +3,16 @@
     "allow": [
       "Bash(python -m py_compile parser.py)",
       "Bash(python -m py_compile main.py)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(xargs -I{} echo {})",
+      "Bash(python -m py_compile database.py)",
+      "Bash(python -m py_compile test_send.py)",
+      "Bash(python -m py_compile main.py database.py parser.py test_send.py)",
+      "Bash(git log *)",
+      "Bash(git ls-tree *)",
+      "Bash(python \"D:\\\\temp\\\\claude\\\\d--project-starcraft-TuFlauncher\\\\86a12c64-91ff-4d75-b2be-bcbfafc4d494\\\\scratchpad\\\\test_pending_alert.py\")",
+      "Bash(python -c ' *)",
+      "Bash(tasklist //FI \"IMAGENAME eq python.exe\" //FO CSV)"
     ]
   }
 }

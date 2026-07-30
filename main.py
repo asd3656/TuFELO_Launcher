@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import winreg
+import winsound
 from pathlib import Path
 import webbrowser
 import tkinter as tk
@@ -25,7 +26,7 @@ import parser as rep_parser
 # 상수 / 컬러 팔레트 (ELO 보드 톤)
 # ──────────────────────────────────────────────────────────────────────────────
 
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.1.1"
 
 
 def _app_dir() -> Path:
@@ -96,6 +97,14 @@ def _send_notification(title: str, msg: str) -> None:
     try:
         from plyer import notification
         notification.notify(title=title, message=msg, app_name="TuFlauncher", timeout=5)
+    except Exception:
+        pass
+
+
+def _play_alert_sound() -> None:
+    """게임 풀스크린 중에도 들리도록 짧은 시스템 알림음을 재생합니다."""
+    try:
+        winsound.MessageBeep(winsound.MB_ICONASTERISK)
     except Exception:
         pass
 
@@ -188,6 +197,9 @@ class App(ctk.CTk):
         self._version_outdated  = False
         self._notice_text       = ""
         self._tray_icon: pystray.Icon | None = None
+        self._tray_icon_normal: Image.Image | None = None
+        self._tray_icon_alert: Image.Image | None = None
+        self._tray_blink_active = False
         self._sending_count = 0
 
         self.title(f"TuFlauncher v{APP_VERSION}")
@@ -1252,6 +1264,7 @@ class App(ctk.CTk):
                     match_type=match_type,
                     played_at=played_at_str,
                     replay_hash=parsed["replay_hash"],
+                    mark_usage=False,  # 옵저버 모드: name_p1이 실제 런처 사용자가 아님
                 )
                 winner_log = member1["name"] if player1_won else member2["name"]
                 loser_log  = member2["name"] if player1_won else member1["name"]
@@ -1366,6 +1379,8 @@ class App(ctk.CTk):
                     f"— 미확인 상대 패널에서 선수 입력 후 전송하세요."
                 )
                 self._notify("닉네임 확인 필요", f"미확인 상대: {match_data['opp_raw_name']}\n런처에서 직접 입력해 주세요.")
+            threading.Thread(target=_play_alert_sound, daemon=True).start()
+            self._start_tray_blink()
         except Exception as e:
             self._log(f"[미확인 상대 오류] {e}")
 
@@ -1787,6 +1802,10 @@ class App(ctk.CTk):
         except Exception:
             img = Image.new("RGBA", (64, 64), color=(79, 142, 247, 255))
 
+        self._tray_icon_normal = img
+        overlay = Image.new("RGBA", img.size, (231, 76, 60, 255))
+        self._tray_icon_alert = Image.blend(img, overlay, 0.6)
+
         menu = pystray.Menu(
             pystray.MenuItem("열기", lambda icon, item: self.after(0, self._restore_window), default=True),
             pystray.MenuItem("종료", lambda icon, item: self.after(0, self._quit_app)),
@@ -1799,11 +1818,35 @@ class App(ctk.CTk):
         self._notify("TuFlauncher", "런처가 백그라운드에서 실행 중입니다.")
 
     def _restore_window(self) -> None:
+        self._tray_blink_active = False
         self.deiconify()
         self.lift()
         self.focus_force()
 
-    def _quit_app(self, icon=None, item=None) -> None:
+    def _start_tray_blink(self, times: int = 6, interval: float = 0.5) -> None:
+        """트레이 아이콘을 잠시 깜빡여 창을 확인하도록 유도합니다. 창을 열면 즉시 멈춥니다."""
+        if self._tray_icon is None or self._tray_blink_active:
+            return
+        self._tray_blink_active = True
+        threading.Thread(target=self._tray_blink_run, args=(times, interval), daemon=True).start()
+
+    def _tray_blink_run(self, times: int, interval: float) -> None:
+        try:
+            for _ in range(times):
+                if not self._tray_blink_active or self._tray_icon is None:
+                    break
+                self._tray_icon.icon = self._tray_icon_alert
+                time.sleep(interval)
+                if not self._tray_blink_active or self._tray_icon is None:
+                    break
+                self._tray_icon.icon = self._tray_icon_normal
+                time.sleep(interval)
+        finally:
+            self._tray_blink_active = False
+            if self._tray_icon is not None:
+                self._tray_icon.icon = self._tray_icon_normal
+
+    def _quit_app(self) -> None:
         if self._sending_count > 0:
             ans = messagebox.askyesno(
                 "전송 중",

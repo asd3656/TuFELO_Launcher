@@ -1,3 +1,5 @@
+import threading
+
 import requests
 import urllib3
 
@@ -96,6 +98,31 @@ def fetch_all_members() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# 런처 사용 통계 — members.last_launcher_used_at 갱신 (fire-and-forget)
+# ---------------------------------------------------------------------------
+
+def _mark_launcher_used_async(name: str) -> None:
+    try:
+        requests.post(
+            f"{_SUPABASE_URL}/rest/v1/rpc/mark_launcher_used",
+            headers=_supabase_headers(),
+            json={"member_name": name},
+            timeout=5,
+            verify=False,
+        )
+    except Exception:
+        pass
+
+
+def _mark_launcher_used(name: str) -> None:
+    """전적 전송 시 런처 사용자의 마지막 사용 시각을 백그라운드로 기록합니다.
+
+    실패해도 실제 전적 전송 로직에는 영향을 주지 않으며, 응답도 기다리지 않습니다.
+    """
+    threading.Thread(target=_mark_launcher_used_async, args=(name,), daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
 # matches — Google Apps Script로 전송
 # ---------------------------------------------------------------------------
 
@@ -110,6 +137,7 @@ def send_match(
     match_type: str,
     played_at: str = "",
     replay_hash: str = "",
+    mark_usage: bool = True,
 ) -> None:
     """
     경기 결과를 Google Apps Script Web App에 POST합니다.
@@ -119,6 +147,10 @@ def send_match(
       E: name_p2, F: tier_p2, G: map, H: match_type,
       K: played_at, L: replay_hash (중복 방지 지문)
     name_p1 은 항상 런처 사용자, player1_won 으로 승패 결정.
+
+    mark_usage: name_p1을 런처 실사용자로 보고 last_launcher_used_at을 갱신할지 여부.
+    옵저버 모드처럼 name_p1이 리플레이 속 플레이어일 뿐 실제 런처 사용자가 아닐 수 있는
+    호출부에서는 False로 넘겨야 합니다.
     """
     if not APPS_SCRIPT_URL:
         raise RuntimeError("APPS_SCRIPT_URL이 설정되지 않았습니다.")
@@ -133,6 +165,8 @@ def send_match(
         resp = requests.get(location, timeout=15, verify=False)
 
     resp.raise_for_status()
+    if mark_usage:
+        _mark_launcher_used(name_p1)
     try:
         result = resp.json()
     except Exception:
