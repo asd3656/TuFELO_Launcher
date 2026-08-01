@@ -12,7 +12,10 @@
       "Bash(git ls-tree *)",
       "Bash(python \"D:\\\\temp\\\\claude\\\\d--project-starcraft-TuFlauncher\\\\86a12c64-91ff-4d75-b2be-bcbfafc4d494\\\\scratchpad\\\\test_pending_alert.py\")",
       "Bash(python -c ' *)",
-      "Bash(tasklist //FI \"IMAGENAME eq python.exe\" //FO CSV)"
+      "Bash(tasklist //FI \"IMAGENAME eq python.exe\" //FO CSV)",
+      "Bash(python -m py_compile main.py database.py)",
+      "Bash(python \"D:\\\\temp\\\\claude\\\\d--project-starcraft-TuFlauncher\\\\86a12c64-91ff-4d75-b2be-bcbfafc4d494\\\\scratchpad\\\\test_retry_and_queue.py\")",
+      "Bash(python \"D:\\\\temp\\\\claude\\\\d--project-starcraft-TuFlauncher\\\\86a12c64-91ff-4d75-b2be-bcbfafc4d494\\\\scratchpad\\\\test_on_retry.py\")"
     ]
   }
 }

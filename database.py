@@ -1,4 +1,6 @@
 import threading
+import time
+from typing import Callable
 
 import requests
 import urllib3
@@ -126,6 +128,25 @@ def _mark_launcher_used(name: str) -> None:
 # matches — Google Apps Script로 전송
 # ---------------------------------------------------------------------------
 
+_SEND_MAX_RETRIES = 2   # 최초 시도 포함 총 3회
+_SEND_RETRY_DELAY = 3   # 초
+
+
+def _post_match_row(payload: dict) -> dict:
+    """Apps Script에 1회 POST하고 JSON 응답을 반환합니다. 실패 시 예외를 그대로 던집니다."""
+    resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=15, allow_redirects=False, verify=False)
+    location = resp.headers.get("Location")
+    if location:
+        resp = requests.get(location, timeout=15, verify=False)
+
+    resp.raise_for_status()
+    try:
+        return resp.json()
+    except Exception:
+        body = resp.text[:300] if resp.text else "(빈 응답)"
+        raise RuntimeError(f"Apps Script 응답이 JSON이 아닙니다. 상태코드={resp.status_code}, 내용={body}")
+
+
 def send_match(
     *,
     tier_p1: str = "",
@@ -138,6 +159,7 @@ def send_match(
     played_at: str = "",
     replay_hash: str = "",
     mark_usage: bool = True,
+    on_retry: Callable[[str], None] | None = None,
 ) -> None:
     """
     경기 결과를 Google Apps Script Web App에 POST합니다.
@@ -151,6 +173,13 @@ def send_match(
     mark_usage: name_p1을 런처 실사용자로 보고 last_launcher_used_at을 갱신할지 여부.
     옵저버 모드처럼 name_p1이 리플레이 속 플레이어일 뿐 실제 런처 사용자가 아닐 수 있는
     호출부에서는 False로 넘겨야 합니다.
+
+    네트워크 타임아웃/연결 오류/비정상 응답(Apps Script 과부하 등)은 일시적일 수 있으므로
+    최대 _SEND_MAX_RETRIES회까지 재시도합니다. 중복/업무 오류(duplicate, error)는
+    재시도해도 결과가 같으므로 즉시 예외를 던집니다.
+
+    on_retry: 재시도가 발생할 때마다(대기 직전) 사람이 읽을 메시지 문자열로 호출됩니다.
+    호출부에서 로그 패널에 남기는 용도로 사용합니다.
     """
     if not APPS_SCRIPT_URL:
         raise RuntimeError("APPS_SCRIPT_URL이 설정되지 않았습니다.")
@@ -159,19 +188,22 @@ def send_match(
     row = [tier_p1, name_p1, result1, result2, name_p2, tier_p2, map, match_type, "", "", played_at, replay_hash]
     payload = {"rows": [row]}
 
-    resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=15, allow_redirects=False, verify=False)
-    location = resp.headers.get("Location")
-    if location:
-        resp = requests.get(location, timeout=15, verify=False)
+    for attempt in range(_SEND_MAX_RETRIES + 1):
+        try:
+            result = _post_match_row(payload)
+            break
+        except (requests.exceptions.RequestException, RuntimeError) as e:
+            if attempt >= _SEND_MAX_RETRIES:
+                raise
+            if on_retry:
+                on_retry(
+                    f"[재시도 {attempt + 1}/{_SEND_MAX_RETRIES}] 응답 지연/오류로 "
+                    f"{_SEND_RETRY_DELAY}초 후 재시도합니다: {e}"
+                )
+            time.sleep(_SEND_RETRY_DELAY)
 
-    resp.raise_for_status()
     if mark_usage:
         _mark_launcher_used(name_p1)
-    try:
-        result = resp.json()
-    except Exception:
-        body = resp.text[:300] if resp.text else "(빈 응답)"
-        raise RuntimeError(f"Apps Script 응답이 JSON이 아닙니다. 상태코드={resp.status_code}, 내용={body}")
     if result.get("status") == "duplicate":
         raise DuplicateMatchError("이미 등록된 경기입니다. (다른 클랜원이 먼저 업로드)")
     if result.get("status") == "error":

@@ -201,6 +201,8 @@ class App(ctk.CTk):
         self._tray_icon_alert: Image.Image | None = None
         self._tray_blink_active = False
         self._sending_count = 0
+        self._send_queue: queue.Queue = queue.Queue()
+        threading.Thread(target=self._send_worker, daemon=True).start()
 
         self.title(f"TuFlauncher v{APP_VERSION}")
         self.geometry("820x780")
@@ -1215,6 +1217,7 @@ class App(ctk.CTk):
                 match_type  = match_type,
                 played_at   = played_at_str,
                 replay_hash = parsed["replay_hash"],
+                on_retry    = lambda msg: self._log(f"{msg} | hash: {short_hash}"),
             )
             self._log(
                 f"[수집 완료] 유형: {match_type} | 맵: {parsed['map_name']} | "
@@ -1265,6 +1268,7 @@ class App(ctk.CTk):
                     played_at=played_at_str,
                     replay_hash=parsed["replay_hash"],
                     mark_usage=False,  # 옵저버 모드: name_p1이 실제 런처 사용자가 아님
+                    on_retry=lambda msg: self._log(f"{msg} | hash: {short_hash}"),
                 )
                 winner_log = member1["name"] if player1_won else member2["name"]
                 loser_log  = member2["name"] if player1_won else member1["name"]
@@ -1526,6 +1530,21 @@ class App(ctk.CTk):
         self._p12_ac_listbox.delete(0, "end")
         self._p12_active_entry = None
 
+    def _send_worker(self) -> None:
+        """전적 전송 작업을 하나씩 순차 처리합니다.
+
+        미확인 상대 패널에서 여러 건을 한꺼번에 체크해 보내도 Apps Script에
+        동시에 여러 요청이 몰리지 않도록, 모든 전송 작업을 이 큐 하나로 직렬화합니다.
+        """
+        while True:
+            job = self._send_queue.get()
+            try:
+                job()
+            except Exception:
+                pass
+            finally:
+                self._send_queue.task_done()
+
     def _send_pending_match(self, idx: int, opp_member: dict) -> None:
         if idx >= len(self._pending_matches):
             return
@@ -1559,6 +1578,7 @@ class App(ctk.CTk):
                     match_type  = match_data["match_type"],
                     played_at   = match_data["played_at"],
                     replay_hash = match_data["replay_hash"],
+                    on_retry    = lambda msg: self.after(0, lambda m=msg: self._log(f"{m} | hash: {short_hash}")),
                 )
                 winner_log = match_data["me_name"] if match_data["player1_won"] else opp_name
                 loser_log  = opp_name if match_data["player1_won"] else match_data["me_name"]
@@ -1580,7 +1600,7 @@ class App(ctk.CTk):
                 except Exception:
                     pass
 
-        threading.Thread(target=_do, daemon=True).start()
+        self._send_queue.put(_do)
 
     def _send_pending_double_match(self, idx: int, member1: dict, member2: dict) -> None:
         if idx >= len(self._pending_matches):
@@ -1613,6 +1633,7 @@ class App(ctk.CTk):
                     match_type=match_data["match_type"],
                     played_at=match_data["played_at"],
                     replay_hash=match_data["replay_hash"],
+                    on_retry=lambda msg: self.after(0, lambda m=msg: self._log(f"{m} | hash: {short_hash}")),
                 )
                 winner_log = member1["name"] if player1_won else member2["name"]
                 loser_log  = member2["name"] if player1_won else member1["name"]
@@ -1634,7 +1655,7 @@ class App(ctk.CTk):
                 except Exception:
                     pass
 
-        threading.Thread(target=_do, daemon=True).start()
+        self._send_queue.put(_do)
 
     def _delete_pending_matches(self) -> None:
         checked = [i for i, v in enumerate(self._pending_check_vars) if v.get()]
